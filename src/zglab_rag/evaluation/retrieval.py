@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -54,22 +55,31 @@ def rank_by_cosine(
 @dataclass(frozen=True, slots=True)
 class RetrievalMetrics:
     recall_at: dict[int, float]
+    hit_rate_at: dict[int, float]
     mrr: float
     evaluated_queries: int
 
 
-def _target_is_retrieved(
-    target: RelevantTarget,
-    ranked_indices: list[int],
-    chunks: list[KnowledgeChunk],
-) -> bool:
-    return any(target.matches(chunks[index]) for index in ranked_indices)
+class RankedEvidence(Protocol):
+    source_id: str
+    source_path: str
+    section_path: list[str]
 
 
-def compute_retrieval_metrics(
+def _target_matches(target: RelevantTarget, item: RankedEvidence) -> bool:
+    section_matches = not target.section_path or (
+        item.section_path[: len(target.section_path)] == target.section_path
+    )
+    return (
+        item.source_id == target.source_id
+        and item.source_path == target.source_path
+        and section_matches
+    )
+
+
+def compute_ranked_retrieval_metrics(
     queries: list[EvaluationQuery],
-    rankings: list[list[int]],
-    chunks: list[KnowledgeChunk],
+    rankings: list[list[RankedEvidence]],
     *,
     cutoffs: tuple[int, ...] = DEFAULT_RECALL_CUTOFFS,
 ) -> RetrievalMetrics:
@@ -79,21 +89,24 @@ def compute_retrieval_metrics(
         raise ValueError("at least one scored query is required")
 
     recall_sums = {cutoff: 0.0 for cutoff in cutoffs}
+    hit_sums = {cutoff: 0.0 for cutoff in cutoffs}
     reciprocal_rank_sum = 0.0
     for query, ranking in zip(queries, rankings, strict=True):
         if not query.relevant:
             raise ValueError(f"query '{query.id}' has no relevant targets")
         for cutoff in cutoffs:
             retrieved = sum(
-                _target_is_retrieved(target, ranking[:cutoff], chunks) for target in query.relevant
+                any(_target_matches(target, item) for item in ranking[:cutoff])
+                for target in query.relevant
             )
             recall_sums[cutoff] += retrieved / len(query.relevant)
+            hit_sums[cutoff] += float(retrieved > 0)
 
         first_relevant_rank = next(
             (
                 rank
-                for rank, chunk_index in enumerate(ranking, start=1)
-                if any(target.matches(chunks[chunk_index]) for target in query.relevant)
+                for rank, item in enumerate(ranking, start=1)
+                if any(_target_matches(target, item) for target in query.relevant)
             ),
             None,
         )
@@ -103,6 +116,22 @@ def compute_retrieval_metrics(
     query_count = len(queries)
     return RetrievalMetrics(
         recall_at={cutoff: recall_sums[cutoff] / query_count for cutoff in cutoffs},
+        hit_rate_at={cutoff: hit_sums[cutoff] / query_count for cutoff in cutoffs},
         mrr=reciprocal_rank_sum / query_count,
         evaluated_queries=query_count,
+    )
+
+
+def compute_retrieval_metrics(
+    queries: list[EvaluationQuery],
+    rankings: list[list[int]],
+    chunks: list[KnowledgeChunk],
+    *,
+    cutoffs: tuple[int, ...] = DEFAULT_RECALL_CUTOFFS,
+) -> RetrievalMetrics:
+    item_rankings = [[chunks[index] for index in ranking] for ranking in rankings]
+    return compute_ranked_retrieval_metrics(
+        queries,
+        item_rankings,
+        cutoffs=cutoffs,
     )

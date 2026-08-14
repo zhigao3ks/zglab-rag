@@ -28,7 +28,7 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前已完成 `Phase 4 - persistent vector store & incremental index lifecycle`：
+当前进入 `Phase 5 - production vector retrieval baseline`：
 
 - 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
 - Git source 通过显式 `local_path` 和 include allowlist 获取文档；
@@ -43,6 +43,9 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 - 增量 planner 按 `chunk_id + embedding_input_hash + embedding_profile_id` 区分
   new/changed/unchanged/deleted，重复 build 不会重新计算未变化向量；
 - embedding 在事务外完成，验证成功后才在短事务中原子更新 metadata、vector 与 source snapshot。
+- 正式 `VectorRetriever` 只读持久化 index，默认且强制执行 public visibility；
+- 支持 source/scope filter、受控 over-fetch、profile validation 与可观测 latency；
+- Phase 5 复用 Phase 3 数据集，通过真实 SQLite + sqlite-vec 链路报告 Recall、HitRate、MRR。
 
 后续阶段：
 
@@ -55,13 +58,15 @@ v2  Local source acquisition
  ↓
 v3  Embedding benchmark
  ↓
-v4  Persistent vector store（当前）
+v4  Persistent vector store / index lifecycle
  ↓
-v5  Hybrid retrieval
+v5  Production vector retriever（当前）
  ↓
-v6  Lightweight reranker
+v6  Hybrid retrieval
  ↓
-v7  Grounded answer + citations
+v7  Lightweight reranker
+ ↓
+v8  Grounded answer + citations
 ```
 
 ## 目录
@@ -183,6 +188,33 @@ composition、normalize 或 query mode 与 active profile 不一致时会拒绝�
 `rebuild` 可以替换 active profile，而且 profile 变化时必须覆盖所有已索引 source。
 `search` 只是验证 sqlite-vec 持久化 KNN 和 metadata 回表的 public-only smoke test，不是正式
 Retriever，也不包含 BM25、融合或 rerank。
+
+## Production Vector Retriever
+
+Phase 5 的正式 CLI：
+
+```bash
+uv run python -m zglab_rag.retrieval.cli \
+  "Agent 长期记忆和 Context 有什么区别？" --top-k 5 --debug
+
+uv run python -m zglab_rag.retrieval.cli \
+  "结构化 LLM 调用" --source notes --scope knowledge
+
+uv run python -m zglab_rag.evaluation.vector_retrieval \
+  --source identity-profile --source notes
+```
+
+Retriever 默认 `top_k=5`、最大 50，且不提供 private CLI 开关。过滤采用受控 over-fetch：
+先从 vec0 取得不含业务 metadata 的 rowid/distance，再由关系查询强制校验 public、source 和
+scope；不足 top-k 时扩大候选集，直到补足、耗尽 index 或达到配置上限。Debug 只输出计数、
+filter 与 latency，不输出被过滤候选的 metadata。
+
+sqlite-vec 返回 cosine distance。对外结果统一定义 `score = 1 - distance`，因此 score 越高、
+distance 越低表示越相关。每次检索会验证 query provider、当前配置与数据库 active embedding
+profile 一致；不匹配时明确失败，不会 rebuild 或切换算法。
+
+正式 search 始终执行最大 top-k 限制。离线 evaluator 为了与 Phase 3 的完整排名 MRR 可比，
+会在评测进程内读取当前 corpus 的完整排名；这不会放宽 public CLI 的 top-k 配置。
 
 ## 安全边界
 

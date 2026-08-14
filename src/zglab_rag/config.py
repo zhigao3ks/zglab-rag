@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     chunk_max_size: int = 1200
     chunk_overlap: int = 120
 
+    retrieval_default_top_k: int = 5
+    retrieval_max_top_k: int = 50
+    retrieval_candidate_factor: int = 4
+    retrieval_minimum_candidate_k: int = 20
+    retrieval_maximum_candidate_k: int = 1000
+
 
 def get_settings() -> Settings:
     return Settings()

@@ -397,3 +397,60 @@ class IndexRepository:
                 if len(results) == top_k:
                     break
         return results
+
+    def vector_count(self) -> int:
+        return int(self.connection.execute("SELECT count(*) FROM vec_chunks").fetchone()[0])
+
+    def vector_candidates(
+        self,
+        query_vector: np.ndarray,
+        *,
+        candidate_k: int,
+    ) -> list[sqlite3.Row]:
+        if candidate_k <= 0 or self.vector_count() == 0:
+            return []
+        return self.connection.execute(
+            """
+            SELECT rowid, distance
+            FROM vec_chunks
+            WHERE embedding MATCH ? AND k = ?
+            ORDER BY distance
+            """,
+            (serialize_float32(query_vector), candidate_k),
+        ).fetchall()
+
+    def hydrate_filtered_candidates(
+        self,
+        row_ids: Sequence[int],
+        *,
+        visibility: str,
+        source_ids: Sequence[str] = (),
+        scopes: Sequence[str] = (),
+    ) -> dict[int, sqlite3.Row]:
+        """Hydrate only allowed rows so filtered metadata never leaves SQLite."""
+        if not row_ids:
+            return {}
+        clauses = ["c.visibility = ?"]
+        parameters: list[object] = [visibility]
+        if source_ids:
+            clauses.append(f"c.source_id IN ({','.join('?' for _ in source_ids)})")
+            parameters.extend(source_ids)
+        if scopes:
+            clauses.append(
+                f"json_extract(d.metadata_json, '$.scope') IN "
+                f"({','.join('?' for _ in scopes)})"
+            )
+            parameters.extend(scopes)
+        row_placeholders = ",".join("?" for _ in row_ids)
+        clauses.append(f"c.id IN ({row_placeholders})")
+        parameters.extend(row_ids)
+        rows = self.connection.execute(
+            f"""
+            SELECT c.*, json_extract(d.metadata_json, '$.scope') AS scope
+            FROM chunks c
+            JOIN documents d ON d.document_id = c.document_id
+            WHERE {' AND '.join(clauses)}
+            """,
+            tuple(parameters),
+        ).fetchall()
+        return {int(row["id"]): row for row in rows}

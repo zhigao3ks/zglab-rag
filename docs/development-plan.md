@@ -127,7 +127,30 @@ Acceptance:
 Formal `/search` API and production Retriever composition remain deferred. Phase 4 does not add
 BM25, hybrid fusion, reranking, generation or source synchronization.
 
-## Phase 5 — Hybrid Retrieval
+## Phase 5 — Production Vector Retrieval Baseline
+
+Status: implemented.
+
+Goal: promote Phase 4 smoke search into a reusable and evaluable read-only `VectorRetriever`.
+
+Implement:
+
+- formal query/result/filter/diagnostics contracts;
+- active embedding profile validation;
+- public-by-default source/scope filtering;
+- controlled candidate over-fetch;
+- deterministic score/distance semantics;
+- persistent sqlite-vec evaluation with Recall, HitRate, MRR and latency;
+- hard-negative score diagnostics without a refusal threshold.
+
+Acceptance:
+
+- private candidates never expose metadata or enter public results;
+- restrictive filters can still fill top-k through bounded over-fetch;
+- persistent metrics align with the Phase 3 BGE contextual baseline;
+- search is read-only and never builds or synchronizes the index.
+
+## Phase 6 — Hybrid Retrieval
 
 Goal: improve exact technical term / project name retrieval.
 
@@ -143,7 +166,7 @@ Acceptance:
 - compare vector-only vs BM25-only vs hybrid on the same golden set;
 - retain benchmark output.
 
-## Phase 6 — Lightweight Reranker
+## Phase 7 — Lightweight Reranker
 
 Goal: improve Top-K ordering after hybrid recall.
 
@@ -157,7 +180,7 @@ Benchmark:
 
 The production reranker is optional if measured gain is not worth resource cost.
 
-## Phase 7 — Grounded Answer Generation
+## Phase 8 — Grounded Answer Generation
 
 Goal: public `/ask` endpoint.
 
@@ -175,7 +198,7 @@ Acceptance:
 - factual claims are grounded in selected chunks;
 - unknown questions do not trigger fabricated personal facts.
 
-## Phase 8 — Evaluation Harness
+## Phase 9 — Evaluation Harness
 
 Create a versioned golden dataset containing questions such as:
 
@@ -188,7 +211,7 @@ Create a versioned golden dataset containing questions such as:
 
 Track retrieval and generation separately.
 
-## Phase 9 — Incremental Sync & Production Deployment
+## Phase 10 — Incremental Sync & Production Deployment
 
 Implement:
 

@@ -200,7 +200,26 @@ Query Normalization
        Evidence / Context
 ```
 
-The first implementation may start with vector-only retrieval, but interfaces must leave room for hybrid retrieval and reranking.
+Phase 5 implements only the vector branch. BM25, fusion and reranking remain future stages.
+
+The production vector path is:
+
+```text
+RetrievalQuery
+→ active embedding profile validation
+→ EmbeddingProvider.encode_queries
+→ sqlite-vec cosine KNN rowid/distance candidates
+→ relational public/source/scope filtering and metadata hydration
+→ deterministic RetrievalResult ordering
+```
+
+Public visibility is mandatory and is applied in the relational hydration query. Controlled
+over-fetch expands `candidate_k` when high-ranking disallowed rows would otherwise leave fewer than
+`top_k` public results. Filtered rows expose no title, path or content to the retrieval layer or debug
+output.
+
+sqlite-vec cosine output is a distance. The public result contract defines
+`score = 1 - cosine_distance`; higher score and lower distance both mean greater similarity.
 
 ### Generation Flow
 
@@ -243,7 +262,7 @@ src/zglab_rag/
 ├── ingestion/
 │   └── normalize, parse, chunk, embed, index
 ├── retrieval/
-│   └── lexical/vector/fusion/rerank
+│   └── production vector contracts, filters, over-fetch and read-only retrieval
 └── generation/
     └── context construction and grounded answer generation
 ```
@@ -368,7 +387,21 @@ Embedding runs before the apply transaction. After vector shape/finite-value val
 transaction applies relational upserts, stale deletes, vectors, states, snapshots and run completion.
 If embedding fails, the previous usable index remains unchanged and `index_runs` records the failure.
 
-## 11. Evaluation Architecture
+## 11. Production Vector Retrieval Evaluation
+
+Phase 5 reuses `evaluation/retrieval.yaml` and the persistent Phase 4 index. It does not reconstruct
+document embeddings or use the Phase 3 in-memory ranker. The same scored queries report target-level
+Recall@K, query-level HitRate@K and MRR, including category breakdowns.
+
+Hard-negative queries remain diagnostic only: their top-1 score/distance, top-2 score and margin are
+recorded without selecting a refusal threshold. Query embedding, sqlite-vec search and total retrieval
+latency are recorded separately; model load time is excluded from per-query latency.
+
+The public retriever keeps its configured maximum top-k. The offline evaluator intentionally requests
+the complete current-corpus ranking only for MRR parity with Phase 3, whose in-memory calculation did
+not truncate rankings at Recall@30.
+
+## 12. Evaluation Architecture
 
 Evaluation should be built as a first-class module rather than an ad-hoc script.
 
@@ -397,7 +430,7 @@ Generation evaluation may later include:
 - citation correctness;
 - refusal / insufficient-evidence behavior.
 
-## 12. Non-goals for v0
+## 13. Non-goals for v0
 
 Do not implement yet:
 

@@ -6,11 +6,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from zglab_rag.config import get_settings
-from zglab_rag.embeddings.config import EmbeddingModelConfig, EmbeddingModelRegistry
+from zglab_rag.embeddings.config import EmbeddingModelConfig
 from zglab_rag.embeddings.sentence_transformer import SentenceTransformerEmbeddingProvider
-from zglab_rag.evaluation.composition import TextComposition
 from zglab_rag.indexing.indexer import KnowledgeIndexer, plan_sources
 from zglab_rag.indexing.models import EmbeddingProfile, IndexPlan, SourceIndexInput
+from zglab_rag.indexing.profile import load_active_embedding_profile
 from zglab_rag.indexing.search import search_public_vectors
 from zglab_rag.ingestion.chunking import ChunkingConfig, MarkdownHeadingChunker
 from zglab_rag.ingestion.markdown import MarkdownDocumentParser
@@ -19,10 +19,6 @@ from zglab_rag.sources.factory import create_source_adapter
 from zglab_rag.sources.registry import SourceRegistry
 from zglab_rag.storage.database import Database
 from zglab_rag.storage.repositories import IndexRepository
-from zglab_rag.storage.schema import VECTOR_DIMENSION
-
-ACTIVE_MODEL_ID = "bge-small-zh-v1.5"
-ACTIVE_COMPOSITION = TextComposition.CONTEXTUAL
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -56,13 +52,7 @@ def _common_paths(parser: argparse.ArgumentParser) -> None:
 
 
 def _profile(models_config: Path) -> tuple[EmbeddingProfile, EmbeddingModelConfig]:
-    model = EmbeddingModelRegistry.from_yaml(models_config).get_enabled(ACTIVE_MODEL_ID)
-    profile = EmbeddingProfile.create(
-        model,
-        dimension=VECTOR_DIMENSION,
-        composition=ACTIVE_COMPOSITION,
-    )
-    return profile, model
+    return load_active_embedding_profile(models_config)
 
 
 def _acquire(source_ids: list[str], sources_config: Path) -> list[SourceIndexInput]:
