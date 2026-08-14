@@ -128,10 +128,16 @@ char_count: integer
 project: string | null
 tags: [string]
 source_url: string | null
-source_revision: string | null
+source_path: string
+revision: string | null
 ```
 
 `visibility`, `scope` and core provenance fields are duplicated intentionally on chunks so retrieval can filter before expensive ranking/context construction.
+
+`chunk_id` is derived deterministically from document identity, heading path, section occurrence,
+oversized-section part index and chunk content hash. Re-ingesting unchanged content therefore
+produces the same IDs. `revision` carries the source revision when one exists; local curated files
+may leave it null.
 
 ## 4. Markdown-aware Chunking
 

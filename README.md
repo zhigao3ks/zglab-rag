@@ -28,19 +28,20 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前处于 `v0 - architecture foundation`：
+当前处于 `v1 - local Markdown ingestion`：
 
-- 冻结知识源与 metadata 模型；
-- 建立 ingestion / retrieval / generation / API 分层；
-- 建立 Codex 开发约束；
-- 暂不绑定具体 Embedding 与 Reranker 实现。
+- 从 `config/sources.yaml` 解析已注册的本地 Markdown；
+- 使用 YAML Frontmatter 构建可追溯的 `KnowledgeDocument`；
+- 按 Markdown 标题层级生成稳定、带 visibility 的 `KnowledgeChunk`；
+- 超长章节按配置进行二次切分；
+- 暂不实现 Embedding、索引和检索。
 
 后续阶段：
 
 ```text
 v0  Architecture & source model
  ↓
-v1  Markdown ingestion + vector retrieval
+v1  Markdown ingestion
  ↓
 v2  BM25 + vector hybrid retrieval
  ↓
@@ -97,6 +98,15 @@ uv run uvicorn zglab_rag.api.main:app --reload
 ```bash
 curl http://127.0.0.1:8000/health
 ```
+
+验证本地 Markdown ingestion：
+
+```bash
+uv run python -m zglab_rag.ingestion.cli knowledge/identity/profile.md
+```
+
+Chunk 参数可通过 `ZGLAB_RAG_CHUNK_TARGET_SIZE`、
+`ZGLAB_RAG_CHUNK_MAX_SIZE` 和 `ZGLAB_RAG_CHUNK_OVERLAP` 配置。
 
 ## 安全边界
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from zglab_rag.domain.models import SourceDefinition, SourceRegistryConfig, Visibility
+from zglab_rag.domain.models import SourceDefinition, SourceKind, SourceRegistryConfig, Visibility
 
 
 class SourceRegistry:
@@ -32,3 +32,19 @@ class SourceRegistry:
             if source.id == source_id:
                 return source
         raise KeyError(f"Unknown source: {source_id}")
+
+    def local_for_path(
+        self,
+        path: str | Path,
+        *,
+        project_root: str | Path = ".",
+    ) -> SourceDefinition:
+        root = Path(project_root).resolve()
+        requested = Path(path)
+        requested = requested.resolve() if requested.is_absolute() else (root / requested).resolve()
+        for source in self.all(enabled_only=True):
+            if source.kind != SourceKind.LOCAL or not source.path:
+                continue
+            if (root / source.path).resolve() == requested:
+                return source
+        raise KeyError(f"Path is not an enabled registered local source: {path}")

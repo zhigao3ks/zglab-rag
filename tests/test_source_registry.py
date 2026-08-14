@@ -3,7 +3,6 @@ from pathlib import Path
 from zglab_rag.domain.models import Visibility
 from zglab_rag.sources.registry import SourceRegistry
 
-
 CONFIG_PATH = Path("config/sources.yaml")
 
 

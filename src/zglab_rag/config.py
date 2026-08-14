@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     sources_config: Path = Path("config/sources.yaml")
     default_visibility: str = "public"
 
+    chunk_target_size: int = 700
+    chunk_max_size: int = 1200
+    chunk_overlap: int = 120
+
 
 def get_settings() -> Settings:
     return Settings()

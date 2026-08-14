@@ -26,6 +26,8 @@ uv run uvicorn zglab_rag.api.main:app --reload
 
 ## Phase 1 — Local Markdown Ingestion
 
+Status: implemented.
+
 Goal: index `knowledge/identity/profile.md` without any GitHub synchronization or model dependency.
 
 Implement:

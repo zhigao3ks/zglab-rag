@@ -46,6 +46,21 @@ class SourceRegistryConfig(BaseModel):
     sources: list[SourceDefinition]
 
 
+class RawDocument(BaseModel):
+    """Unparsed content and provenance returned by a source adapter."""
+
+    source_id: str
+    source_kind: SourceKind
+    scope: Scope
+    visibility: Visibility
+    priority: int
+    source_path: str
+    raw_content: str
+
+    source_url: str | None = None
+    revision: str | None = None
+
+
 class KnowledgeDocument(BaseModel):
     document_id: str
     source_id: str
@@ -81,12 +96,13 @@ class KnowledgeChunk(BaseModel):
     content: str
     content_hash: str
     char_count: int
+    source_path: str
 
     token_count: int | None = None
     project: str | None = None
     tags: list[str] = Field(default_factory=list)
     source_url: str | None = None
-    source_revision: str | None = None
+    revision: str | None = None
 
 
 class RetrievedChunk(BaseModel):

@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Protocol, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Protocol
 
-from zglab_rag.domain.models import KnowledgeChunk, KnowledgeDocument, SourceDefinition
+from zglab_rag.domain.models import (
+    KnowledgeChunk,
+    KnowledgeDocument,
+    RawDocument,
+    SourceDefinition,
+)
 
 
 class SourceLoader(Protocol):
-    def load(self, source: SourceDefinition) -> Iterable[KnowledgeDocument]: ...
+    def load(self, source: SourceDefinition) -> Iterable[RawDocument]: ...
+
+
+class DocumentParser(Protocol):
+    def parse(self, raw_document: RawDocument) -> KnowledgeDocument: ...
 
 
 class Chunker(Protocol):
