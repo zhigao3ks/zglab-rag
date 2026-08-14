@@ -1,0 +1,110 @@
+version: 1
+
+# Only sources explicitly registered here are eligible for ingestion.
+# Public assistant retrieval must still enforce visibility=public at query time.
+
+sources:
+  - id: identity-profile
+    enabled: true
+    kind: local
+    scope: identity
+    visibility: public
+    priority: 100
+    path: knowledge/identity/profile.md
+    include:
+      - knowledge/identity/profile.md
+    exclude: []
+
+  - id: notes
+    enabled: true
+    kind: git
+    scope: knowledge
+    visibility: public
+    priority: 80
+    repository: zhigao3ks/notes
+    ref: main
+    include:
+      - README.md
+      - knowledge/**/*.md
+      - projects/**/*.md
+      - problems/**/*.md
+    exclude:
+      - archive/**
+      - inbox/**
+      - figures/**
+
+  - id: zglab-website
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 90
+    repository: zhigao3ks/zglab-website
+    ref: main
+    include:
+      - README.md
+      - src/data/profile.yaml
+      - src/data/publications.yaml
+      - src/data/awards.yaml
+      - src/content/projects/**/*.md
+      - docs/**/*.md
+    exclude:
+      - public/**
+      - package-lock.json
+      - dist/**
+
+  - id: resume-tailor-agent
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 90
+    repository: zhigao3ks/resume-tailor-agent
+    ref: main
+    include:
+      - README.md
+      - docs/**/*.md
+      - PROJECT_KNOWLEDGE.md
+    exclude:
+      - src/**
+      - tests/**
+      - '*.lock'
+
+  - id: zglab-tools
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 85
+    repository: zhigao3ks/zglab-tools
+    ref: main
+    include:
+      - README.md
+      - docs/**/*.md
+      - PROJECT_KNOWLEDGE.md
+    exclude:
+      - src/**
+      - dist/**
+      - node_modules/**
+      - package-lock.json
+
+  - id: zglab-daily
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 80
+    repository: zhigao3ks/zglab-daily
+    ref: main
+    include:
+      - README.md
+      - docs/**/*.md
+      - PROJECT_KNOWLEDGE.md
+    exclude:
+      - frontend/node_modules/**
+      - '**/__pycache__/**'
+      - '*.db'
+      - '*.sqlite*'
+
+# Private/company sources are intentionally absent from v0.
+# Do not add them to the public index merely because the GitHub account can access them.
