@@ -28,12 +28,12 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前处于 `v1 - local Markdown ingestion`：
+当前处于 `Phase 2 - controlled local source acquisition`：
 
-- 从 `config/sources.yaml` 解析已注册的本地 Markdown；
-- 使用 YAML Frontmatter 构建可追溯的 `KnowledgeDocument`；
-- 按 Markdown 标题层级生成稳定、带 visibility 的 `KnowledgeChunk`；
-- 超长章节按配置进行二次切分；
+- 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
+- Git source 通过显式 `local_path` 和 include allowlist 获取文档；
+- exclude 规则优先，文件顺序、document/chunk ID 与 provenance 保持稳定；
+- Git Adapter 只读取本地 checkout 和 HEAD revision，不负责 clone、pull 或 fetch；
 - 暂不实现 Embedding、索引和检索。
 
 后续阶段：
@@ -43,17 +43,17 @@ v0  Architecture & source model
  ↓
 v1  Markdown ingestion
  ↓
-v2  BM25 + vector hybrid retrieval
+v2  Local source acquisition
  ↓
-v3  Lightweight reranker
+v3  Embedding benchmark
  ↓
-v4  grounded answer + citations
+v4  Vector retrieval
  ↓
-v5  evaluation harness
+v5  Hybrid retrieval
  ↓
-v6  source sync / incremental indexing
+v6  Lightweight reranker
  ↓
-v7  intent routing / agentic retrieval
+v7  Grounded answer + citations
 ```
 
 ## 目录
@@ -104,6 +104,22 @@ curl http://127.0.0.1:8000/health
 ```bash
 uv run python -m zglab_rag.ingestion.cli knowledge/identity/profile.md
 ```
+
+检查已注册的本地知识源：
+
+```bash
+uv run python -m zglab_rag.sources.cli list
+uv run python -m zglab_rag.sources.cli inspect notes
+```
+
+对一个已注册 source 执行 Markdown ingestion：
+
+```bash
+uv run python -m zglab_rag.ingestion.cli --source notes
+```
+
+这些命令不会执行 `git pull`、`git fetch` 或其他同步操作；repository 更新由未来独立的
+Sync Layer 或部署任务负责。
 
 Chunk 参数可通过 `ZGLAB_RAG_CHUNK_TARGET_SIZE`、
 `ZGLAB_RAG_CHUNK_MAX_SIZE` 和 `ZGLAB_RAG_CHUNK_OVERLAP` 配置。

@@ -246,6 +246,14 @@ These are high-authority sources maintained specifically for the assistant.
 
 Only configured include patterns are eligible.
 
+Each Git source declares a project-root-relative `local_path`. Discovery is deterministic,
+deduplicated and limited to regular Markdown files matched by the include allowlist; exclude rules
+take precedence. Symlinks that leave the repository are not followed.
+
+Git-backed documents store a repository-relative `source_path` and the current local HEAD SHA as
+their revision. Machine-specific absolute checkout paths are never written into document or chunk
+metadata.
+
 Good candidates:
 
 - README;

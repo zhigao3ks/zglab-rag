@@ -103,6 +103,14 @@ exclude patterns
 
 This enables configuration-driven ingestion instead of hard-coded repository handling.
 
+For local Git sources, `local_path` resolves relative to the ZGLab RAG project root. The source
+adapter validates that this path is a Git repository root, reads its current HEAD revision, and
+discovers only allowlisted Markdown files. Exclude rules override include rules.
+
+The acquisition layer does not synchronize repositories. Development and production deployment
+tasks update local checkouts separately; ingestion only consumes their filesystem state. It never
+scans sibling repositories that are absent from the registry.
+
 ## 4. Public Boundary
 
 The initial product is public-facing. Therefore the default retrieval policy is:
@@ -154,6 +162,19 @@ Important properties:
 - stable document/chunk IDs where possible;
 - visibility attached before indexing;
 - raw source provenance preserved.
+
+Phase 2 adapters implement the acquisition boundary as:
+
+```text
+registered local / local Git source
+        ↓ inspect + deterministic discovery
+RawDocument(source_path, revision, visibility, ...)
+        ↓ existing Markdown parser and chunker
+KnowledgeDocument + KnowledgeChunk
+```
+
+Only read-only Git inspection (`rev-parse` and `remote get-url`) is performed here. Clone, pull,
+fetch, checkout and other synchronization operations belong to a future Sync Layer.
 
 ### Retrieval Flow
 

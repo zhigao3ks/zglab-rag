@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import PurePosixPath
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SourceKind(StrEnum):
@@ -37,8 +38,42 @@ class SourceDefinition(BaseModel):
     path: str | None = None
     repository: str | None = None
     ref: str | None = None
+    local_path: str | None = None
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_source_location(self) -> SourceDefinition:
+        self._validate_patterns("include", self.include)
+        self._validate_patterns("exclude", self.exclude)
+
+        if self.kind == SourceKind.GIT:
+            if not self.repository:
+                raise ValueError("git source requires 'repository'")
+            if not self.local_path:
+                raise ValueError("git source requires 'local_path'")
+            if PurePosixPath(self.local_path).is_absolute():
+                raise ValueError("git source 'local_path' must be relative to the project root")
+            if not self.include:
+                raise ValueError("git source requires a non-empty include allowlist")
+            repository_wide_patterns = {"*", "**", "**/*", "**/*.md", "**/*.markdown"}
+            if any(
+                pattern.replace("\\", "/").removeprefix("./") in repository_wide_patterns
+                for pattern in self.include
+            ):
+                raise ValueError("git source include may not use a repository-wide catch-all")
+        return self
+
+    @staticmethod
+    def _validate_patterns(field_name: str, patterns: list[str]) -> None:
+        for pattern in patterns:
+            normalized = pattern.replace("\\", "/")
+            if not normalized or normalized.startswith("/"):
+                raise ValueError(f"source {field_name} patterns must be non-empty relative paths")
+            if ".." in PurePosixPath(normalized).parts:
+                raise ValueError(
+                    f"source {field_name} patterns may not traverse parent directories"
+                )
 
 
 class SourceRegistryConfig(BaseModel):

@@ -50,7 +50,9 @@ Do not add a vector database yet unless needed for the next phase.
 
 ## Phase 2 — Git Knowledge Source Adapter
 
-Goal: synchronize configured Markdown/YAML files from selected public repositories.
+Status: implemented.
+
+Goal: acquire configured Markdown files from selected local Git repository checkouts.
 
 Start with:
 
@@ -59,17 +61,19 @@ Start with:
 
 Implement:
 
-- repository checkout/sync strategy;
+- project-root-relative local repository paths;
 - include/exclude filtering;
 - source revision (commit SHA);
-- change detection;
 - source URL provenance.
+
+Repository synchronization is intentionally outside this phase. The adapter does not clone, pull,
+fetch or modify source repositories.
 
 Acceptance:
 
 - only configured files are loaded;
 - private/unregistered repositories cannot be discovered automatically;
-- unchanged files can be skipped.
+- repeated discovery and ingestion are deterministic.
 
 ## Phase 3 — Embedding Benchmark
 

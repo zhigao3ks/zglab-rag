@@ -1,19 +1,30 @@
 from pathlib import Path
 
 import yaml
+from pydantic import ValidationError
 
 from zglab_rag.domain.models import SourceDefinition, SourceKind, SourceRegistryConfig, Visibility
+from zglab_rag.sources.errors import SourceConfigurationError, SourceNotRegisteredError
 
 
 class SourceRegistry:
     def __init__(self, config: SourceRegistryConfig) -> None:
+        source_ids = [source.id for source in config.sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise SourceConfigurationError("Source registry contains duplicate source IDs")
         self._config = config
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "SourceRegistry":
         config_path = Path(path)
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        return cls(SourceRegistryConfig.model_validate(raw))
+        try:
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            config = SourceRegistryConfig.model_validate(raw)
+        except (OSError, yaml.YAMLError, ValidationError) as exc:
+            raise SourceConfigurationError(
+                f"Unable to load source registry '{config_path}': {exc}"
+            ) from exc
+        return cls(config)
 
     def all(self, *, enabled_only: bool = True) -> list[SourceDefinition]:
         if not enabled_only:
@@ -32,6 +43,15 @@ class SourceRegistry:
             if source.id == source_id:
                 return source
         raise KeyError(f"Unknown source: {source_id}")
+
+    def get_enabled(self, source_id: str) -> SourceDefinition:
+        try:
+            source = self.get(source_id)
+        except KeyError as exc:
+            raise SourceNotRegisteredError(f"Source is not registered: {source_id}") from exc
+        if not source.enabled:
+            raise SourceNotRegisteredError(f"Source is registered but disabled: {source_id}")
+        return source
 
     def local_for_path(
         self,

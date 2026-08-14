@@ -23,6 +23,7 @@ sources:
     priority: 80
     repository: zhigao3ks/notes
     ref: main
+    local_path: ../notes
     include:
       - README.md
       - knowledge/**/*.md
@@ -32,6 +33,8 @@ sources:
       - archive/**
       - inbox/**
       - figures/**
+      - "**/node_modules/**"
+      - "**/.git/**"
 
   - id: zglab-website
     enabled: true
@@ -41,6 +44,7 @@ sources:
     priority: 90
     repository: zhigao3ks/zglab-website
     ref: main
+    local_path: ../zglab-website
     include:
       - README.md
       - src/data/profile.yaml
@@ -52,6 +56,8 @@ sources:
       - public/**
       - package-lock.json
       - dist/**
+      - "**/node_modules/**"
+      - "**/.git/**"
 
   - id: resume-tailor-agent
     enabled: true
@@ -61,6 +67,7 @@ sources:
     priority: 90
     repository: zhigao3ks/resume-tailor-agent
     ref: main
+    local_path: ../resume-tailor-agent
     include:
       - README.md
       - docs/**/*.md
@@ -69,6 +76,8 @@ sources:
       - src/**
       - tests/**
       - '*.lock'
+      - "**/node_modules/**"
+      - "**/.git/**"
 
   - id: zglab-tools
     enabled: true
@@ -78,6 +87,7 @@ sources:
     priority: 85
     repository: zhigao3ks/zglab-tools
     ref: main
+    local_path: ../zglab-tools
     include:
       - README.md
       - docs/**/*.md
@@ -87,6 +97,8 @@ sources:
       - dist/**
       - node_modules/**
       - package-lock.json
+      - "**/node_modules/**"
+      - "**/.git/**"
 
   - id: zglab-daily
     enabled: true
@@ -96,6 +108,7 @@ sources:
     priority: 80
     repository: zhigao3ks/zglab-daily
     ref: main
+    local_path: ../zglab-daily
     include:
       - README.md
       - docs/**/*.md
@@ -105,6 +118,8 @@ sources:
       - '**/__pycache__/**'
       - '*.db'
       - '*.sqlite*'
+      - "**/node_modules/**"
+      - "**/.git/**"
 
-# Private/company sources are intentionally absent from v0.
+# Private/company sources are intentionally absent from the public source registry.
 # Do not add them to the public index merely because the GitHub account can access them.

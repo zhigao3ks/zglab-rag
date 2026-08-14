@@ -22,7 +22,7 @@ from zglab_rag.ingestion.errors import (
 )
 
 _HEADING_PATTERN = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.*?)[ \t]*$")
-_FENCE_PATTERN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+_FENCE_PATTERN = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$")
 
 
 def sha256_text(value: str) -> str:
@@ -61,14 +61,21 @@ def split_frontmatter(markdown: str) -> tuple[dict[str, Any], str]:
 
 
 def _first_heading(markdown: str) -> str | None:
-    active_fence: str | None = None
+    active_fence: tuple[str, int] | None = None
     for line in markdown.splitlines():
         fence_match = _FENCE_PATTERN.match(line)
-        if fence_match:
+        if active_fence is None and fence_match:
             marker = fence_match.group(1)
-            if active_fence is None:
-                active_fence = marker[0]
-            elif marker[0] == active_fence:
+            active_fence = marker[0], len(marker)
+            continue
+        if active_fence is not None and fence_match:
+            marker = fence_match.group(1)
+            marker_type, minimum_length = active_fence
+            if (
+                marker[0] == marker_type
+                and len(marker) >= minimum_length
+                and not fence_match.group(2).strip()
+            ):
                 active_fence = None
             continue
         if active_fence is None and (heading := _HEADING_PATTERN.match(line)):

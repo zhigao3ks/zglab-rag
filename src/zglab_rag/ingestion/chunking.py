@@ -8,8 +8,10 @@ from zglab_rag.domain.models import KnowledgeChunk, KnowledgeDocument
 from zglab_rag.ingestion.markdown import sha256_text
 
 _HEADING_PATTERN = re.compile(r"^[ \t]{0,3}(#{1,6})[ \t]+(.*?)[ \t]*$")
-_FENCE_PATTERN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+_FENCE_PATTERN = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})(.*)$")
 _BREAK_SEPARATORS = ("\n\n", "\n", "。", "！", "？", ". ", "! ", "? ", "；", "; ", " ")
+
+type FenceState = tuple[str, int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,12 +35,33 @@ class MarkdownSection:
     content: str
 
 
+@dataclass(frozen=True, slots=True)
+class FenceSpan:
+    start: int
+    end: int
+
+
+def _opened_fence(match: re.Match[str]) -> FenceState:
+    marker = match.group(1)
+    return marker[0], len(marker)
+
+
+def _closes_fence(match: re.Match[str], active_fence: FenceState) -> bool:
+    marker = match.group(1)
+    marker_type, minimum_length = active_fence
+    return (
+        marker[0] == marker_type
+        and len(marker) >= minimum_length
+        and not match.group(2).strip()
+    )
+
+
 def _parse_sections(markdown: str) -> list[MarkdownSection]:
     sections: list[MarkdownSection] = []
     heading_stack: list[str] = []
     current_path: tuple[str, ...] = ()
     current_lines: list[str] = []
-    active_fence: str | None = None
+    active_fence: FenceState | None = None
 
     def flush() -> None:
         content = "".join(current_lines).strip()
@@ -48,14 +71,15 @@ def _parse_sections(markdown: str) -> list[MarkdownSection]:
 
     for line in markdown.splitlines(keepends=True):
         fence_match = _FENCE_PATTERN.match(line)
-        if fence_match:
-            marker = fence_match.group(1)
-            if active_fence is None:
-                active_fence = marker[0]
-            elif marker[0] == active_fence:
+        if active_fence is not None:
+            heading = None
+            if fence_match and _closes_fence(fence_match, active_fence):
                 active_fence = None
-
-        heading = _HEADING_PATTERN.match(line.rstrip("\n")) if active_fence is None else None
+        elif fence_match:
+            active_fence = _opened_fence(fence_match)
+            heading = None
+        else:
+            heading = _HEADING_PATTERN.match(line.rstrip("\n"))
         if heading:
             flush()
             current_lines = [line]
@@ -82,11 +106,57 @@ def _boundary(text: str, start: int, ideal: int, hard_limit: int) -> int:
     return hard_limit
 
 
+def _fenced_spans(text: str) -> list[FenceSpan]:
+    spans: list[FenceSpan] = []
+    active_fence: FenceState | None = None
+    fence_start = 0
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        fence_match = _FENCE_PATTERN.match(line)
+        if active_fence is None and fence_match:
+            active_fence = _opened_fence(fence_match)
+            fence_start = offset
+        elif (
+            active_fence is not None
+            and fence_match
+            and _closes_fence(fence_match, active_fence)
+        ):
+            spans.append(FenceSpan(start=fence_start, end=offset + len(line)))
+            active_fence = None
+        offset += len(line)
+    if active_fence is not None:
+        spans.append(FenceSpan(start=fence_start, end=len(text)))
+    return spans
+
+
+def _protect_end(start: int, proposed_end: int, fence_spans: list[FenceSpan]) -> int:
+    for span in fence_spans:
+        if span.start < proposed_end < span.end:
+            return span.start if span.start > start else span.end
+    return proposed_end
+
+
+def _protect_overlap_start(
+    current_start: int,
+    end: int,
+    overlap: int,
+    fence_spans: list[FenceSpan],
+) -> int:
+    proposed_start = end - overlap
+    if proposed_start <= current_start:
+        return end
+    for span in fence_spans:
+        if span.start < proposed_start < span.end:
+            return span.start if span.start > current_start else span.end
+    return proposed_start
+
+
 def _split_oversized(content: str, config: ChunkingConfig) -> list[str]:
     if len(content) <= config.max_size:
         return [content]
 
     pieces: list[str] = []
+    fence_spans = _fenced_spans(content)
     start = 0
     while start < len(content):
         remaining = len(content) - start
@@ -96,6 +166,7 @@ def _split_oversized(content: str, config: ChunkingConfig) -> list[str]:
             ideal = min(start + config.target_size, len(content))
             hard_limit = min(start + config.max_size, len(content))
             end = _boundary(content, start, ideal, hard_limit)
+            end = _protect_end(start, end, fence_spans)
         if end <= start:
             end = min(start + config.max_size, len(content))
 
@@ -105,7 +176,8 @@ def _split_oversized(content: str, config: ChunkingConfig) -> list[str]:
         if end == len(content):
             break
 
-        next_start = max(start + 1, end - config.overlap)
+        next_start = _protect_overlap_start(start, end, config.overlap, fence_spans)
+        next_start = max(start + 1, next_start)
         while next_start < end and content[next_start].isspace():
             next_start += 1
         start = next_start
