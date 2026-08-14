@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     data_dir: Path = Path("runtime")
+    database_path: Path = Path("runtime/knowledge.db")
     sources_config: Path = Path("config/sources.yaml")
     default_visibility: str = "public"
 

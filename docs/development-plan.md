@@ -77,6 +77,8 @@ Acceptance:
 
 ## Phase 3 — Embedding Benchmark
 
+Status: implemented.
+
 Goal: choose the embedding implementation using real ZGLab documents.
 
 Candidates should be benchmarked rather than assumed.
@@ -99,23 +101,31 @@ Only after this phase set `EMBEDDING_MODEL` as the default.
 
 ## Phase 4 — Vector Retrieval
 
+Status: implemented as persistent vector storage and incremental index lifecycle.
+
 Goal: first usable semantic search.
 
 Implement:
 
-- lightweight vector index adapter;
-- metadata persistence;
-- public visibility pre-filter;
-- `/search` endpoint;
-- source references.
+- SQLite canonical metadata store with explicit schema version;
+- pinned sqlite-vec vec0 adapter for the active BGE 512-dimensional profile;
+- deterministic embedding profile and exact contextual input hashes;
+- source-scoped new/changed/unchanged/deleted planning;
+- transaction-safe incremental build, explicit rebuild and failed-run audit;
+- public-only CLI vector KNN smoke search with metadata join.
 
 Initial storage direction: SQLite + replaceable lightweight vector layer.
 
 Acceptance:
 
-- public query returns ranked chunks;
-- every chunk maps back to a real source;
-- private visibility cannot be returned by the public API.
+- repeated identical build embeds zero chunks;
+- changed/new/deleted fixture updates only affected rows;
+- embedding failure leaves the previous complete index usable;
+- persisted vectors survive database reopen and map to canonical chunks;
+- private visibility cannot be returned by the public smoke search.
+
+Formal `/search` API and production Retriever composition remain deferred. Phase 4 does not add
+BM25, hybrid fusion, reranking, generation or source synchronization.
 
 ## Phase 5 — Hybrid Retrieval
 

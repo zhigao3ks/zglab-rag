@@ -234,6 +234,10 @@ src/zglab_rag/
 │   └── replaceable providers and model-specific query/document encoding
 ├── evaluation/
 │   └── tracked retrieval datasets, in-memory ranking and benchmark orchestration
+├── indexing/
+│   └── embedding profile, incremental planning and atomic index lifecycle
+├── storage/
+│   └── SQLite schema/repositories and sqlite-vec adapter
 ├── sources/
 │   └── local/Git source adapters and registry
 ├── ingestion/
@@ -253,20 +257,28 @@ introduce a vector database.
 
 ## 7. Storage
 
-Initial target:
+Phase 4 implementation:
 
 ```text
-SQLite
+SQLite (canonical store)
+├── source_snapshots
 ├── documents
 ├── chunks
-├── source state
-└── ingestion state
+├── embedding_profiles
+├── chunk_embedding_state
+└── index_runs
 
-Vector layer
-└── sqlite-vec or another lightweight replaceable index
+sqlite-vec vec0 (replaceable vector adapter)
+└── rowid = chunks.id, embedding float[512] distance_metric=cosine
 ```
 
-The repository must not assume that sqlite-vec is permanent. Vector access should stay behind a repository/index interface.
+The relational tables are authoritative for content, provenance and visibility. The vec0 table does
+not duplicate chunk content or business metadata. sqlite-vec is pinned to `0.1.9`, loaded through
+Python `sqlite3`, and checked with `vec_version()` whenever a database is opened. Vector access stays
+behind the storage repository so sqlite-vec remains replaceable.
+
+The database has an explicit schema version (currently version 1). An unsupported version or an
+extension load/version failure is an error; there is no silent in-memory cosine fallback.
 
 Production runtime data should live outside the code checkout, for example:
 
@@ -335,20 +347,26 @@ Every document should retain at least:
 - content hash;
 - updated timestamp if available.
 
-A later sync process can therefore perform:
+Phase 4 performs source-scoped planning with:
 
 ```text
-source revision unchanged
-→ skip
-
-file hash unchanged
-→ skip
-
-changed file
-→ delete/replace only affected chunks
+compose_document_text(chunk, contextual)
+→ SHA-256 exact embedding input
+→ compare chunk_id + embedding_input_hash + embedding_profile_id
+→ new / changed / unchanged / deleted
 ```
 
-instead of rebuilding the whole knowledge base every time.
+Only new and changed chunks are embedded. Deleted relational rows, embedding state and vec0 rows are
+removed only for sources participating in the run. A title or section-path change alters the exact
+contextual embedding input even when body content does not.
+
+The active embedding profile deterministically records model ID/name, dimension, composition,
+normalization, query mode and maximum length. Incompatible writes raise `IndexProfileMismatch`;
+they never mix vectors. Replacing a profile requires an explicit full-scope rebuild.
+
+Embedding runs before the apply transaction. After vector shape/finite-value validation, one short
+transaction applies relational upserts, stale deletes, vectors, states, snapshots and run completion.
+If embedding fails, the previous usable index remains unchanged and `index_runs` records the failure.
 
 ## 11. Evaluation Architecture
 

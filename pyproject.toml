@@ -12,6 +12,7 @@ dependencies = [
   "pydantic-settings",
   "pyyaml",
   "sentence-transformers>=5.1,<6",
+  "sqlite-vec==0.1.9",
   "torch==2.7.1",
   "uvicorn[standard]",
 ]

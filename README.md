@@ -28,7 +28,7 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前处于 `Phase 3 - embedding evaluation & benchmark`：
+当前已完成 `Phase 4 - persistent vector store & incremental index lifecycle`：
 
 - 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
 - Git source 通过显式 `local_path` 和 include allowlist 获取文档；
@@ -36,7 +36,13 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 - Git Adapter 只读取本地 checkout 和 HEAD revision，不负责 clone、pull 或 fetch；
 - 候选 Embedding 模型由 `config/embedding-models.yaml` 注册；
 - `evaluation/retrieval.yaml` 保存 50 条可追踪到 section 的检索标注；
-- benchmark 只使用全量 chunk 的内存 cosine，不实现持久化索引或生产检索。
+- Phase 3 benchmark 仍使用全量 chunk 的内存 cosine，评测输入保持不变；
+- `runtime/knowledge.db` 使用普通 SQLite 表持久化 source、document、chunk、embedding
+  profile 与 index run；
+- `sqlite-vec==0.1.9` 的 vec0 表只保存与 `chunks.id` 对应的 512 维 BGE 向量；
+- 增量 planner 按 `chunk_id + embedding_input_hash + embedding_profile_id` 区分
+  new/changed/unchanged/deleted，重复 build 不会重新计算未变化向量；
+- embedding 在事务外完成，验证成功后才在短事务中原子更新 metadata、vector 与 source snapshot。
 
 后续阶段：
 
@@ -49,7 +55,7 @@ v2  Local source acquisition
  ↓
 v3  Embedding benchmark
  ↓
-v4  Vector retrieval
+v4  Persistent vector store（当前）
  ↓
 v5  Hybrid retrieval
  ↓
@@ -85,8 +91,10 @@ zglab-rag/
 │       ├── embeddings/
 │       ├── evaluation/
 │       ├── ingestion/
+│       ├── indexing/
 │       ├── retrieval/
 │       ├── generation/
+│       ├── storage/
 │       └── sources/
 └── tests/
 ```
@@ -150,6 +158,31 @@ Benchmark 的 Recall@K 按 relevant section target 计算：同一超长 section
 命中即视为该 target 命中；多个 relevant target 分别计入 recall。`hard_negative` 在尚未定义
 相似度拒绝阈值的 Phase 3 中不进入 Recall/MRR 分母，并会作为 skipped query 记录。
 总指标输出 Recall@1/3/5/10/20/30 与 MRR，并按 scored query category 输出对应 breakdown。
+
+## 持久化 Knowledge Index
+
+默认数据库为已忽略的 `runtime/knowledge.db`，可用
+`ZGLAB_RAG_DATABASE_PATH` 覆盖。数据库初始化会加载 sqlite-vec、执行
+`select vec_version()` 并校验 schema version；扩展加载或版本不匹配会明确失败，不会退化为
+Python cosine。
+
+```bash
+uv run python -m zglab_rag.indexing.cli status
+uv run python -m zglab_rag.indexing.cli plan \
+  --source identity-profile --source notes
+uv run python -m zglab_rag.indexing.cli build \
+  --source identity-profile --source notes
+uv run python -m zglab_rag.indexing.cli rebuild \
+  --source identity-profile --source notes
+uv run python -m zglab_rag.indexing.cli search \
+  "Agent 长期记忆和 Context 有什么区别？" --top-k 5
+```
+
+`plan` 是只读操作，不会创建数据库。`build` 只计算 new/changed chunks；模型、维度、
+composition、normalize 或 query mode 与 active profile 不一致时会拒绝写入。只有显式
+`rebuild` 可以替换 active profile，而且 profile 变化时必须覆盖所有已索引 source。
+`search` 只是验证 sqlite-vec 持久化 KNN 和 metadata 回表的 public-only smoke test，不是正式
+Retriever，也不包含 BM25、融合或 rerank。
 
 ## 安全边界
 
