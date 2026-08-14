@@ -181,3 +181,10 @@ uv run uvicorn zglab_rag.api.main:app --reload
 5. 不引入未经证明的事实；
 6. `ruff` 与 `pytest` 通过；
 7. README / docs 在架构变化时同步更新。
+
+## 13. Documentation Language
+
+README、`docs/` 和新增的项目说明文档默认使用中文书写。
+
+模型名、类名、接口名、配置字段、指标、命令及行业通用技术术语可以保留英文；除非存在明确的
+对外英文文档需求，不要新增整篇英文说明文档。

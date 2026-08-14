@@ -1,21 +1,21 @@
-# Development Plan
+# 开发计划
 
-This roadmap is intended for incremental Codex-assisted development. Each phase should stay independently testable and should not pre-implement later complexity.
+本路线图用于在 Codex 协助下渐进开发。每个 Phase 都应能够独立测试，不提前实现后续复杂能力。
 
-## Phase 0 — Architecture Foundation
+## Phase 0 — 架构基础
 
-Status: scaffolded.
+状态：已搭建。
 
-Deliverables:
+交付内容：
 
-- source registry;
-- public/private boundary;
-- domain metadata;
-- replaceable AI component contracts;
-- FastAPI health/source endpoints;
-- Codex repository rules.
+- 来源注册表；
+- 公开/私有边界；
+- Domain 元数据；
+- 可替换的 AI 组件契约；
+- FastAPI 健康检查和来源接口；
+- Codex 仓库规则。
 
-Acceptance:
+验收命令：
 
 ```bash
 uv sync
@@ -24,247 +24,244 @@ uv run ruff check .
 uv run uvicorn zglab_rag.api.main:app --reload
 ```
 
-## Phase 1 — Local Markdown Ingestion
+## Phase 1 — 本地 Markdown Ingestion
 
-Status: implemented.
+状态：已实现。
 
-Goal: index `knowledge/identity/profile.md` without any GitHub synchronization or model dependency.
+目标：在不进行 GitHub 同步、不依赖模型的情况下索引 `knowledge/identity/profile.md`。
 
-Implement:
+实现内容：
 
-- frontmatter parser;
-- Markdown document loader;
-- heading-aware chunker;
-- deterministic document/chunk IDs;
-- SHA-256 content hashes;
-- unit tests.
+- frontmatter parser；
+- Markdown document loader；
+- 标题结构感知 Chunker；
+- 确定性的 document/chunk ID；
+- SHA-256 内容哈希；
+- 单元测试。
 
-Acceptance:
+验收标准：
 
-- profile loads into `KnowledgeDocument`;
-- chunks preserve heading hierarchy;
-- repeated ingestion produces stable IDs;
-- visibility remains `public`.
+- profile 能加载为 `KnowledgeDocument`；
+- Chunk 保留标题层级；
+- 重复 ingestion 产生稳定 ID；
+- visibility 始终为 `public`。
 
-Do not add a vector database yet unless needed for the next phase.
+除非下一阶段确实需要，否则暂不添加 Vector DB。
 
-## Phase 2 — Git Knowledge Source Adapter
+## Phase 2 — Git 知识源适配器
 
-Status: implemented.
+状态：已实现。
 
-Goal: acquire configured Markdown files from selected local Git repository checkouts.
+目标：从选定的本地 Git 仓库 checkout 中获取已配置的 Markdown 文件。
 
-Start with:
+首批来源：
 
-- `notes`;
-- `zglab-website`.
+- `notes`；
+- `zglab-website`。
 
-Implement:
+实现内容：
 
-- project-root-relative local repository paths;
-- include/exclude filtering;
-- source revision (commit SHA);
-- source URL provenance.
+- 相对于项目根目录的本地仓库路径；
+- include/exclude 过滤；
+- 来源 revision（commit SHA）；
+- 来源 URL 追踪。
 
-Repository synchronization is intentionally outside this phase. The adapter does not clone, pull,
-fetch or modify source repositories.
+仓库同步不属于本阶段。适配器不会 clone、pull、fetch 或修改来源仓库。
 
-Acceptance:
+验收标准：
 
-- only configured files are loaded;
-- private/unregistered repositories cannot be discovered automatically;
-- repeated discovery and ingestion are deterministic.
+- 只加载已配置文件；
+- 无法自动发现 private 或未注册仓库；
+- 重复发现和 ingestion 的结果确定一致。
 
-## Phase 3 — Embedding Benchmark
+## Phase 3 — Embedding 评测
 
-Status: implemented.
+状态：已实现。
 
-Goal: choose the embedding implementation using real ZGLab documents.
+目标：使用真实 ZGLab 文档选择 Embedding 实现，而不是预先假定模型。
 
-Candidates should be benchmarked rather than assumed.
+至少比较：
 
-Compare at least:
+- 本地 CPU 路径；
+- 必要时使用 WSL 本地 GPU 路径；
+- 可选的 ONNX/量化生产路径。
 
-- local CPU path;
-- local GPU path on WSL where useful;
-- optional ONNX/quantized path for production.
+记录：
 
-Record:
+- 模型内存；
+- 索引维度；
+- 查询延迟；
+- 文档 Embedding 吞吐；
+- 小型 golden dataset 上的检索质量。
 
-- model memory;
-- index dimension;
-- query latency;
-- document embedding throughput;
-- retrieval quality on a small golden dataset.
-
-Only after this phase set `EMBEDDING_MODEL` as the default.
+仅在完成本阶段后设置默认 `EMBEDDING_MODEL`。
 
 ## Phase 4 — Vector Retrieval
 
-Status: implemented as persistent vector storage and incremental index lifecycle.
+状态：已实现持久化 Vector 存储和增量索引生命周期。
 
-Goal: first usable semantic search.
+目标：形成首个可用的语义搜索。
 
-Implement:
+实现内容：
 
-- SQLite canonical metadata store with explicit schema version;
-- pinned sqlite-vec vec0 adapter for the active BGE 512-dimensional profile;
-- deterministic embedding profile and exact contextual input hashes;
-- source-scoped new/changed/unchanged/deleted planning;
-- transaction-safe incremental build, explicit rebuild and failed-run audit;
-- public-only CLI vector KNN smoke search with metadata join.
+- 带显式 schema version 的 SQLite 权威元数据存储；
+- 为当前 BGE 512 维 profile 固定 sqlite-vec vec0 adapter；
+- 确定性的 Embedding profile 和精确 contextual input hash；
+- 按来源规划 new/changed/unchanged/deleted；
+- 事务安全的增量构建、显式 rebuild 和失败运行审计；
+- public-only CLI Vector KNN 冒烟搜索及元数据 join。
 
-Initial storage direction: SQLite + replaceable lightweight vector layer.
+初始存储方向：SQLite + 可替换的轻量 Vector 层。
 
-Acceptance:
+验收标准：
 
-- repeated identical build embeds zero chunks;
-- changed/new/deleted fixture updates only affected rows;
-- embedding failure leaves the previous complete index usable;
-- persisted vectors survive database reopen and map to canonical chunks;
-- private visibility cannot be returned by the public smoke search.
+- 对相同内容重复 build 时，Embedding 数量为零；
+- fixture 的新增、变化或删除只更新受影响的行；
+- Embedding 失败后，之前完成的索引仍可使用；
+- 数据库重新打开后，持久化 Vector 仍存在并映射到权威 Chunk；
+- public 冒烟搜索不会返回 private visibility。
 
-Formal `/search` API and production Retriever composition remain deferred. Phase 4 does not add
-BM25, hybrid fusion, reranking, generation or source synchronization.
+正式 `/search` API 和生产 Retriever 组合留到后续阶段。Phase 4 不增加 BM25、Hybrid
+融合、Reranking、Generation 或来源同步。
 
-## Phase 5 — Production Vector Retrieval Baseline
+## Phase 5 — 生产 Vector Retrieval Baseline
 
-Status: implemented.
+状态：已实现。
 
-Goal: promote Phase 4 smoke search into a reusable and evaluable read-only `VectorRetriever`.
+目标：将 Phase 4 的冒烟搜索提升为可复用、可评测的只读 `VectorRetriever`。
 
-Implement:
+实现内容：
 
-- formal query/result/filter/diagnostics contracts;
-- active embedding profile validation;
-- public-by-default source/scope filtering;
-- controlled candidate over-fetch;
-- deterministic score/distance semantics;
-- persistent sqlite-vec evaluation with Recall, HitRate, MRR and latency;
-- hard-negative score diagnostics without a refusal threshold.
+- 正式的 query/result/filter/diagnostics 契约；
+- 当前 Embedding profile 校验；
+- public-by-default 的 source/scope 过滤；
+- 受控的候选 over-fetch；
+- 确定性的 score/distance 语义；
+- 持久化 sqlite-vec 的 Recall、HitRate、MRR 和延迟评测；
+- 不设置拒答阈值的 hard-negative 分数诊断。
 
-Acceptance:
+验收标准：
 
-- private candidates never expose metadata or enter public results;
-- restrictive filters can still fill top-k through bounded over-fetch;
-- persistent metrics align with the Phase 3 BGE contextual baseline;
-- search is read-only and never builds or synchronizes the index.
+- private 候选不得暴露元数据或进入公开结果；
+- 严格过滤后仍能通过有限 over-fetch 填满 top-k；
+- 持久化指标与 Phase 3 的 BGE contextual baseline 一致；
+- search 保持只读，不构建或同步索引。
 
 ## Phase 6 — Hybrid Retrieval
 
-Status: implemented and evaluated; Vector remains the default because the first RRF baseline regressed.
+状态：已实现并完成评测；由于首个 RRF baseline 退化，Vector 仍为默认模式。
 
-Goal: improve exact technical term / project name retrieval.
+目标：改善精确技术词和项目名的检索。
 
-Implement:
+实现内容：
 
-- schema v2 SQLite FTS5 trigram index with deterministic lexical profile;
-- explicit v1→v2 migration and FTS lifecycle in the existing atomic apply transaction;
-- BM25 lexical retriever with public/source/scope relational filters;
-- vector + lexical parallel retrieval;
-- deterministic configurable RRF with 50/50 candidate pools;
-- vector/lexical/hybrid metrics, category analysis, hard negatives and latency.
+- schema v2 SQLite FTS5 trigram 索引及确定性 lexical profile；
+- 显式 v1→v2 migration，并在现有原子 apply 事务中管理 FTS 生命周期；
+- 带 public/source/scope 关系过滤的 BM25 Lexical Retriever；
+- Vector + Lexical 并行检索；
+- 候选池各 50、确定且可配置的 RRF；
+- Vector/Lexical/Hybrid 指标、分类分析、hard negatives 和延迟。
 
-Acceptance:
+验收标准：
 
-- compare vector-only vs BM25-only vs hybrid on the same golden set;
-- retain benchmark output.
+- 在同一 golden set 上比较 Vector-only、BM25-only 和 Hybrid；
+- 保留 benchmark 输出。
 
-The limited column-weight comparison selected `title/section/content = 1/1/1` over `2/2/1`.
-Equal-weight RRF (`k=60`) did not beat the Vector baseline on the unchanged dataset, so Phase 6 does
-not change the default mode and does not introduce a reranker or rejection threshold.
+有限的列权重比较选择 `title/section/content = 1/1/1`，而不是 `2/2/1`。等权 RRF
+（`k=60`）在未变化的数据集上没有超过 Vector baseline，因此 Phase 6 不修改默认模式，
+也不引入 Reranker 或拒答阈值。
 
-## Phase 7 — Lightweight Reranker
+## Phase 7 — 轻量 Reranker
 
-Status: implementation, deterministic unit validation and exact-model CPU benchmark complete. Quality
-improved, but the current 2C2G production budget keeps Vector as the default.
+状态：实现、确定性单元验证和指定模型 CPU benchmark 均已完成。质量得到改善，但考虑当前
+2C2G 生产预算，Vector 仍为默认模式。
 
-Goal: improve Top-K ordering after hybrid recall.
+目标：改善 Top-K 候选的排序。
 
-Implement via the `Reranker` contract.
+通过 `Reranker` 契约实现。
 
-Implemented boundary:
+已实现边界：
 
-- independent YAML model registry and `RerankerProvider`;
-- `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` Torch/CPU primary candidate;
-- stable contextual passage composition;
-- Vector-only candidate pools 10/20/30, with 20 as the primary baseline;
-- deterministic reordering with preserved vector/reranker rank and score;
-- evaluation deltas, category metrics, promotion/demotion, hard negatives, latency and RSS;
-- production CLI mode `reranked`, while the default remains `vector`.
+- 独立 YAML 模型注册表和 `RerankerProvider`；
+- `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` Torch/CPU 主候选；
+- 稳定的 contextual passage composition；
+- 仅使用 Vector 的 10/20/30 候选池，以 20 为主要 baseline；
+- 确定性重排，同时保留 Vector/Reranker 的 rank 和 score；
+- evaluation delta、分类指标、promotion/demotion、hard negatives、延迟和 RSS；
+- 生产 CLI 提供 `reranked` 模式，默认仍为 `vector`。
 
-Benchmark:
+Benchmark 内容：
 
-- no reranker;
-- candidate lightweight local rerankers;
-- CPU latency and peak memory on the target 2C2G server profile.
+- 不使用 Reranker；
+- 使用候选轻量本地 Reranker；
+- 在目标 2C2G Server profile 下观察 CPU 延迟和峰值内存。
 
-The production reranker is optional if measured gain is not worth resource cost.
+如果实测收益不足以抵消资源成本，生产 Reranker 可以保持可选。
 
-The exact configured model was downloaded through a Hugging Face mirror into Git-ignored runtime
-storage and its SHA-256 was verified. With candidate_k=20 on the unchanged 47-query dataset,
-Recall@1 improved from 0.5213 to 0.6809, Recall@5 from 0.7872 to 0.8404, and MRR from 0.6532 to
-0.7753 while Recall@20 remained 0.9255. Candidate 20 outperformed 10 and 30 on MRR, but its CPU
-median reranker latency was about 1.74 seconds and the full process peaked around 1.49 GB RSS.
-Reranking is therefore a measured optional mode, not the production default.
+指定模型已通过 Hugging Face 镜像下载到 Git ignored 的 runtime 存储中，并完成 SHA-256
+校验。在未修改的 47 条查询数据集上，candidate_k=20 将 Recall@1 从 0.5213 提升到
+0.6809，将 Recall@5 从 0.7872 提升到 0.8404，将 MRR 从 0.6532 提升到 0.7753，
+Recall@20 保持 0.9255。Candidate 20 的 MRR 高于 10 和 30，但 CPU Reranker 中位延迟约
+1.74 秒，完整进程峰值约 1.49 GB RSS。因此，Reranking 是经过实测的可选模式，而不是
+生产默认模式。详细记录见 `docs/evaluations/phase-7-reranker.md`。
 
-## Phase 8 — Grounded Answer Generation
+## Phase 8 — 基于证据的回答生成
 
-Goal: public `/ask` endpoint.
+目标：提供公网 `/ask` 接口。
 
-Implement:
+实现内容：
 
-- context builder;
-- persona rules separated from evidence;
-- LLM provider adapter;
-- insufficient-evidence behavior;
-- source citations.
+- Context Builder；
+- 与证据分离的 Persona 规则；
+- LLM Provider Adapter；
+- 证据不足时的处理；
+- 来源引用。
 
-Acceptance:
+验收标准：
 
-- answer uses first person naturally;
-- factual claims are grounded in selected chunks;
-- unknown questions do not trigger fabricated personal facts.
+- 回答自然使用第一人称；
+- 事实性陈述基于选定 Chunk；
+- 未知问题不会触发虚构个人事实。
 
 ## Phase 9 — Evaluation Harness
 
-Create a versioned golden dataset containing questions such as:
+建立带版本的 golden dataset，包含以下查询：
 
-- identity queries;
-- project queries;
-- exact technical-term queries;
-- cross-source questions;
-- insufficient-evidence questions;
-- adversarial private-data questions.
+- 身份查询；
+- 项目查询；
+- 精确技术词查询；
+- 跨来源问题；
+- 证据不足问题；
+- 针对 private 数据的对抗问题。
 
-Track retrieval and generation separately.
+分别跟踪 Retrieval 和 Generation。
 
-## Phase 10 — Incremental Sync & Production Deployment
+## Phase 10 — 增量同步与生产部署
 
-Implement:
+实现内容：
 
-- Git source revision checks;
-- changed-document reindex;
-- systemd service;
-- Nginx reverse proxy;
-- runtime data under `/var/lib/zglab-rag/`;
-- health checks and logs.
+- Git 来源 revision 检查；
+- 变化文档重新索引；
+- systemd service；
+- Nginx reverse proxy；
+- `/var/lib/zglab-rag/` 下的 runtime 数据；
+- 健康检查和日志。
 
-Do not put production index/database/model cache inside the Git checkout.
+不得把生产索引、数据库或模型缓存放在 Git checkout 中。
 
-## Codex Task Rule
+## Codex 任务规则
 
-When asking Codex to implement a phase, keep one phase or one vertical slice per task.
+要求 Codex 实现 Phase 时，每次任务只包含一个 Phase 或一个垂直切片。
 
-A good task includes:
+一个良好的任务应包含：
 
 ```text
-Goal
-Files allowed to change
-Contracts that must remain stable
-Tests required
-Explicit non-goals
-Acceptance command
+目标
+允许修改的文件
+必须保持稳定的契约
+必需测试
+明确不做的内容
+验收命令
 ```
 
-Avoid prompts such as “finish the whole RAG system”. The project is intentionally designed so each component can be implemented, measured and reviewed separately.
+避免使用“完成整个 RAG 系统”之类的提示。本项目有意将每个组件设计为可独立实现、测量和审核。

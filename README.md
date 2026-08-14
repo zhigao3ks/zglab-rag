@@ -265,6 +265,8 @@ baseline 为 20。指定模型的 471 MB 权重通过 Hugging Face 镜像下载�
 0.7753，Recall@20 保持 0.9255。candidate_k=10 较快但质量较低；30 的延迟更高且 MRR
 低于 20。CPU 上 20 候选的重排中位延迟约 1.74 秒、模型加载约 2.70 秒、完整评测进程
 峰值 RSS 约 1.49 GB。质量验收通过，但当前 2C2G 生产预算偏紧，默认仍使用 Vector。
+完整指标、promotion/demotion、hard negatives、资源数据和 9 条人工 Query 记录见
+[`docs/evaluations/phase-7-reranker.md`](docs/evaluations/phase-7-reranker.md)。
 
 ## 安全边界
 
