@@ -6,6 +6,7 @@ from time import perf_counter
 
 import numpy as np
 
+from zglab_rag.domain.lexical import DEFAULT_LEXICAL_PROFILE
 from zglab_rag.indexing.errors import (
     EmbeddingValidationError,
     IndexProfileMismatch,
@@ -104,6 +105,7 @@ class KnowledgeIndexer:
         rebuild: bool = False,
     ) -> IndexRunResult:
         started = perf_counter()
+        self.repository.validate_lexical_profile(DEFAULT_LEXICAL_PROFILE)
         source_ids = {item.source.id for item in sources}
         reset_all_vectors = ensure_profile_compatible(
             self.repository,

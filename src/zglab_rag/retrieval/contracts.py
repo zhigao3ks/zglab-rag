@@ -18,7 +18,7 @@ class RetrievalFilter(BaseModel):
     @model_validator(mode="after")
     def enforce_public_baseline(self) -> RetrievalFilter:
         if self.visibility != Visibility.PUBLIC:
-            raise ValueError("Vector retrieval is public-only until authenticated mode exists")
+            raise ValueError("Retrieval is public-only until authenticated mode exists")
         self.source_ids = tuple(sorted(set(self.source_ids)))
         self.scopes = tuple(sorted(set(self.scopes), key=str))
         return self
@@ -43,8 +43,12 @@ class RetrievalResult(BaseModel):
     revision: str | None
     rank: int = Field(gt=0)
     score: float
-    distance: float
-    retriever: Literal["vector"] = "vector"
+    distance: float | None = None
+    retriever: Literal["vector", "lexical", "hybrid"] = "vector"
+    raw_bm25: float | None = None
+    vector_rank: int | None = None
+    lexical_rank: int | None = None
+    rrf_score: float | None = None
 
 
 class RetrievalDiagnostics(BaseModel):

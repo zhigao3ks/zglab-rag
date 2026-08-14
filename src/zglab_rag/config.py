@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     retrieval_candidate_factor: int = 4
     retrieval_minimum_candidate_k: int = 20
     retrieval_maximum_candidate_k: int = 1000
+    hybrid_vector_candidate_k: int = 50
+    hybrid_lexical_candidate_k: int = 50
+    hybrid_rrf_k: int = 60
+    hybrid_vector_weight: float = 1.0
+    hybrid_lexical_weight: float = 1.0
 
 
 def get_settings() -> Settings:

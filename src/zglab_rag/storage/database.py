@@ -11,7 +11,7 @@ from zglab_rag.storage.errors import (
     SchemaVersionError,
     SqliteVecLoadError,
 )
-from zglab_rag.storage.schema import SCHEMA_VERSION, create_schema
+from zglab_rag.storage.schema import SCHEMA_VERSION, create_schema, migrate_v1_to_v2
 
 SQLITE_VEC_VERSION = "0.1.9"
 
@@ -27,7 +27,13 @@ class Database:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
 
-    def connect(self, *, read_only: bool = False, initialize: bool = True) -> sqlite3.Connection:
+    def connect(
+        self,
+        *,
+        read_only: bool = False,
+        initialize: bool = True,
+        migrate: bool = False,
+    ) -> sqlite3.Connection:
         if read_only:
             if not self.path.is_file():
                 raise FileNotFoundError(self.path)
@@ -41,7 +47,11 @@ class Database:
         connection.execute("PRAGMA foreign_keys = ON")
         self._load_sqlite_vec(connection)
         try:
-            self._validate_or_initialize(connection, initialize=initialize and not read_only)
+            self._validate_or_initialize(
+                connection,
+                initialize=initialize and not read_only,
+                migrate=migrate and not read_only,
+            )
         except Exception:
             connection.close()
             raise
@@ -70,6 +80,7 @@ class Database:
         connection: sqlite3.Connection,
         *,
         initialize: bool,
+        migrate: bool,
     ) -> None:
         has_schema = connection.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_metadata'"
@@ -101,9 +112,18 @@ class Database:
             version = int(row[0])
         except (TypeError, ValueError) as exc:
             raise SchemaVersionError(f"Invalid database schema_version: {row[0]!r}") from exc
+        if version == 1 and migrate:
+            try:
+                migrate_v1_to_v2(connection)
+            except sqlite3.Error as exc:
+                raise DatabaseInitializationError(
+                    f"Unable to migrate schema v1 to v2: {exc}"
+                ) from exc
+            version = 2
         if version != SCHEMA_VERSION:
             raise SchemaVersionError(
-                f"Unsupported database schema version {version}; expected {SCHEMA_VERSION}"
+                f"Unsupported database schema version {version}; expected {SCHEMA_VERSION}. "
+                "Run the explicit database migration if this is schema version 1."
             )
 
     @staticmethod

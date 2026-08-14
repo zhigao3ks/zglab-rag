@@ -28,7 +28,7 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前进入 `Phase 5 - production vector retrieval baseline`：
+当前完成 `Phase 6 - lexical retrieval and hybrid search`：
 
 - 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
 - Git source 通过显式 `local_path` 和 include allowlist 获取文档；
@@ -46,6 +46,10 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 - 正式 `VectorRetriever` 只读持久化 index，默认且强制执行 public visibility；
 - 支持 source/scope filter、受控 over-fetch、profile validation 与可观测 latency；
 - Phase 5 复用 Phase 3 数据集，通过真实 SQLite + sqlite-vec 链路报告 Recall、HitRate、MRR。
+- schema v2 增加 SQLite FTS5 trigram index，`rowid` 与 `chunks.id` 一致；
+- `LexicalRetriever` 以关系表强制 public/source/scope filter；
+- `HybridRetriever` 以配置化 RRF 融合 vector/lexical rank，不混合不同 score 尺度；
+- 当前同一评测集上的 Hybrid 低于 Vector，因此默认仍为 `vector`。
 
 后续阶段：
 
@@ -60,9 +64,9 @@ v3  Embedding benchmark
  ↓
 v4  Persistent vector store / index lifecycle
  ↓
-v5  Production vector retriever（当前）
+v5  Production vector retriever
  ↓
-v6  Hybrid retrieval
+v6  Lexical + Hybrid retrieval（当前）
  ↓
 v7  Lightweight reranker
  ↓
@@ -171,6 +175,14 @@ Benchmark 的 Recall@K 按 relevant section target 计算：同一超长 section
 `select vec_version()` 并校验 schema version；扩展加载或版本不匹配会明确失败，不会退化为
 Python cosine。
 
+Phase 6 schema v2 migration 是显式操作。它保留 vec0，只从 canonical `chunks` 表回填 FTS：
+
+```bash
+uv run python -m zglab_rag.storage.migrations runtime/knowledge.db
+```
+
+迁移生产数据前应先在 `runtime/` 内建立可恢复备份；迁移不会运行 ingestion 或 embedding。
+
 ```bash
 uv run python -m zglab_rag.indexing.cli status
 uv run python -m zglab_rag.indexing.cli plan \
@@ -189,19 +201,21 @@ composition、normalize 或 query mode 与 active profile 不一致时会拒绝�
 `search` 只是验证 sqlite-vec 持久化 KNN 和 metadata 回表的 public-only smoke test，不是正式
 Retriever，也不包含 BM25、融合或 rerank。
 
-## Production Vector Retriever
+## Production Retrieval
 
-Phase 5 的正式 CLI：
+Phase 5 Vector baseline 与 Phase 6 Lexical/Hybrid 共用正式 CLI，默认 mode 仍为 vector：
 
 ```bash
-uv run python -m zglab_rag.retrieval.cli \
-  "Agent 长期记忆和 Context 有什么区别？" --top-k 5 --debug
+uv run python -m zglab_rag.retrieval.cli search \
+  "Agent 长期记忆和 Context 有什么区别？" --mode vector --top-k 5 --debug
 
-uv run python -m zglab_rag.retrieval.cli \
-  "结构化 LLM 调用" --source notes --scope knowledge
+uv run python -m zglab_rag.retrieval.cli search \
+  "generation fencing" --mode lexical --source notes --scope knowledge
 
-uv run python -m zglab_rag.evaluation.vector_retrieval \
-  --source identity-profile --source notes
+uv run python -m zglab_rag.retrieval.cli search \
+  "结构化 LLM 调用" --mode hybrid --debug
+
+uv run python -m zglab_rag.evaluation.retrieval_compare
 ```
 
 Retriever 默认 `top_k=5`、最大 50，且不提供 private CLI 开关。过滤采用受控 over-fetch：
@@ -215,6 +229,14 @@ profile 一致；不匹配时明确失败，不会 rebuild 或切换算法。
 
 正式 search 始终执行最大 top-k 限制。离线 evaluator 为了与 Phase 3 的完整排名 MRR 可比，
 会在评测进程内读取当前 corpus 的完整排名；这不会放宽 public CLI 的 top-k 配置。
+
+FTS5 使用 `tokenize='trigram'`。lexical profile 固定记录 tokenizer、config version 与 BM25
+列权重 `title/section/content = 1/1/1`。FTS5 `bm25()` raw value 越小越好；对外 lexical
+score 定义为 `-raw_bm25`，仅在 lexical 模式内比较。小于 3 个 Unicode 字符且没有可检索
+term 的查询会返回 `lexical_not_applicable`，Hybrid 此时只使用 vector。
+
+Hybrid 默认候选池各 50，RRF 参数为 `k=60`、`w_vector=w_lexical=1`，同分时依次使用最佳
+单路 rank 与 `chunk_id`。RRF、cosine 与 raw BM25 不可跨模式比较。
 
 ## 安全边界
 

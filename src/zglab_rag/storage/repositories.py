@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import numpy as np
 from sqlite_vec import serialize_float32
 
+from zglab_rag.domain.lexical import LexicalProfile
 from zglab_rag.domain.models import KnowledgeChunk, KnowledgeDocument, Visibility
 from zglab_rag.indexing.models import (
     EmbeddingProfile,
@@ -36,6 +37,25 @@ class IndexRepository:
         return self.connection.execute(
             "SELECT * FROM embedding_profiles WHERE profile_id=?", (profile_id,)
         ).fetchone()
+
+    def active_lexical_profile_id(self) -> str | None:
+        row = self.connection.execute(
+            "SELECT value FROM index_metadata WHERE key='active_lexical_profile_id'"
+        ).fetchone()
+        return None if row is None else str(row[0])
+
+    def lexical_profile(self, profile_id: str) -> sqlite3.Row | None:
+        return self.connection.execute(
+            "SELECT * FROM lexical_profiles WHERE profile_id=?", (profile_id,)
+        ).fetchone()
+
+    def validate_lexical_profile(self, profile: LexicalProfile) -> None:
+        active = self.active_lexical_profile_id()
+        if active != profile.profile_id:
+            raise RuntimeError(
+                "Lexical profile mismatch: "
+                f"database={active}, requested={profile.profile_id}"
+            )
 
     def store_profile(self, profile: EmbeddingProfile) -> None:
         self.connection.execute(
@@ -172,6 +192,25 @@ class IndexRepository:
 
                 self._delete_stale_chunks(source_input.source.id, plan)
                 self._delete_stale_documents(source_input.source.id, current_document_ids)
+
+            for item in plan.needs_embedding:
+                chunk_row = self.connection.execute(
+                    "SELECT id FROM chunks WHERE chunk_id=?", (item.chunk.chunk_id,)
+                ).fetchone()
+                if chunk_row is None:
+                    raise RuntimeError(f"Chunk was not persisted: {item.chunk.chunk_id}")
+                row_id = int(chunk_row[0])
+                self.connection.execute("DELETE FROM fts_chunks WHERE rowid=?", (row_id,))
+                self.connection.execute(
+                    "INSERT INTO fts_chunks(rowid, title, section_path, content) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        row_id,
+                        item.chunk.title,
+                        " > ".join(item.chunk.section_path),
+                        item.chunk.content,
+                    ),
+                )
 
             for item in plan.needs_embedding:
                 chunk_row = self.connection.execute(
@@ -328,6 +367,9 @@ class IndexRepository:
             ).fetchone()
             if row is not None:
                 self.connection.execute("DELETE FROM vec_chunks WHERE rowid=?", (int(row[0]),))
+                self.connection.execute(
+                    "DELETE FROM fts_chunks WHERE rowid=?", (int(row[0]),)
+                )
             self.connection.execute(
                 "DELETE FROM chunk_embedding_state WHERE chunk_id=?", (chunk_id,)
             )
@@ -401,6 +443,9 @@ class IndexRepository:
     def vector_count(self) -> int:
         return int(self.connection.execute("SELECT count(*) FROM vec_chunks").fetchone()[0])
 
+    def lexical_count(self) -> int:
+        return int(self.connection.execute("SELECT count(*) FROM fts_chunks").fetchone()[0])
+
     def vector_candidates(
         self,
         query_vector: np.ndarray,
@@ -454,3 +499,43 @@ class IndexRepository:
             tuple(parameters),
         ).fetchall()
         return {int(row["id"]): row for row in rows}
+
+    def lexical_search(
+        self,
+        match_expression: str,
+        *,
+        top_k: int,
+        visibility: str,
+        title_weight: float,
+        section_weight: float,
+        content_weight: float,
+        source_ids: Sequence[str] = (),
+        scopes: Sequence[str] = (),
+    ) -> list[sqlite3.Row]:
+        clauses = ["fts_chunks MATCH ?", "c.visibility = ?"]
+        filter_parameters: list[object] = [match_expression, visibility]
+        if source_ids:
+            clauses.append(f"c.source_id IN ({','.join('?' for _ in source_ids)})")
+            filter_parameters.extend(source_ids)
+        if scopes:
+            clauses.append(
+                f"json_extract(d.metadata_json, '$.scope') IN "
+                f"({','.join('?' for _ in scopes)})"
+            )
+            filter_parameters.extend(scopes)
+        parameters: list[object] = [title_weight, section_weight, content_weight]
+        parameters.extend(filter_parameters)
+        parameters.append(top_k)
+        return self.connection.execute(
+            f"""
+            SELECT c.*, json_extract(d.metadata_json, '$.scope') AS scope,
+                   bm25(fts_chunks, ?, ?, ?) AS raw_bm25
+            FROM fts_chunks
+            JOIN chunks c ON c.id = fts_chunks.rowid
+            JOIN documents d ON d.document_id = c.document_id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY raw_bm25 ASC, c.chunk_id ASC
+            LIMIT ?
+            """,
+            tuple(parameters),
+        ).fetchall()

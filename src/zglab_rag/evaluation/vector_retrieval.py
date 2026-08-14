@@ -50,6 +50,7 @@ class LatencyDistribution(BaseModel):
     mean_ms: float
     median_ms: float
     p95_ms: float
+    max_ms: float
 
 
 class HardNegativeDiagnostic(BaseModel):
@@ -106,6 +107,7 @@ def _latency_distribution(values: Sequence[float]) -> LatencyDistribution:
         mean_ms=float(array.mean()),
         median_ms=float(np.median(array)),
         p95_ms=float(np.percentile(array, 95)),
+        max_ms=float(array.max()),
     )
 
 
@@ -364,7 +366,8 @@ def main(argv: list[str] | None = None) -> int:
         ):
             print(
                 f"{label} latency ms: mean={latency.mean_ms:.3f} "
-                f"median={latency.median_ms:.3f} p95={latency.p95_ms:.3f}"
+                f"median={latency.median_ms:.3f} p95={latency.p95_ms:.3f} "
+                f"max={latency.max_ms:.3f}"
             )
         artifact = _write_artifact(result, args.output_dir)
         print(f"artifact: {artifact}")

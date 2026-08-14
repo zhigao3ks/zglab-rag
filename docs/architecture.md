@@ -200,7 +200,8 @@ Query Normalization
        Evidence / Context
 ```
 
-Phase 5 implements only the vector branch. BM25, fusion and reranking remain future stages.
+Phase 5 implements the vector branch. Phase 6 adds the independent FTS5/BM25 branch and RRF
+fusion; reranking remains deferred to Phase 7.
 
 The production vector path is:
 
@@ -220,6 +221,17 @@ output.
 
 sqlite-vec cosine output is a distance. The public result contract defines
 `score = 1 - cosine_distance`; higher score and lower distance both mean greater similarity.
+
+The Phase 6 lexical path indexes separate `title`, stable `section_path` text and `content` columns
+with FTS5 `tokenize='trigram'`. BM25 raw values are lower-is-better; unified lexical results expose
+`score = -raw_bm25`, but Hybrid never blends this number with vector score. Query preparation quotes
+literal terms so ordinary punctuation cannot become FTS syntax. Queries without a term of at least
+three Unicode characters are explicitly lexical-not-applicable.
+
+Hybrid uses configurable candidate pools (50 per branch in the production baseline) and combines
+ranks using `1/(60 + rank)` with equal branch weights. Missing branches contribute zero; ties use the
+best individual rank and then `chunk_id`. Relational public/source/scope filtering occurs inside each
+branch before result metadata reaches fusion.
 
 ### Generation Flow
 
@@ -276,7 +288,7 @@ introduce a vector database.
 
 ## 7. Storage
 
-Phase 4 implementation:
+Phase 4/6 implementation:
 
 ```text
 SQLite (canonical store)
@@ -284,11 +296,15 @@ SQLite (canonical store)
 ├── documents
 ├── chunks
 ├── embedding_profiles
+├── lexical_profiles
 ├── chunk_embedding_state
 └── index_runs
 
 sqlite-vec vec0 (replaceable vector adapter)
 └── rowid = chunks.id, embedding float[512] distance_metric=cosine
+
+SQLite FTS5 trigram
+└── fts_chunks(rowid = chunks.id, title, section_path, content)
 ```
 
 The relational tables are authoritative for content, provenance and visibility. The vec0 table does
@@ -296,8 +312,10 @@ not duplicate chunk content or business metadata. sqlite-vec is pinned to `0.1.9
 Python `sqlite3`, and checked with `vec_version()` whenever a database is opened. Vector access stays
 behind the storage repository so sqlite-vec remains replaceable.
 
-The database has an explicit schema version (currently version 1). An unsupported version or an
-extension load/version failure is an error; there is no silent in-memory cosine fallback.
+The database has an explicit schema version (currently version 2). The explicit v1→v2 migration
+creates the lexical profile/table and backfills FTS directly from `chunks` in one transaction; it
+does not rebuild documents or vectors. Unsupported versions and extension failures are errors; there
+is no silent in-memory cosine fallback.
 
 Production runtime data should live outside the code checkout, for example:
 
@@ -401,7 +419,16 @@ The public retriever keeps its configured maximum top-k. The offline evaluator i
 the complete current-corpus ranking only for MRR parity with Phase 3, whose in-memory calculation did
 not truncate rankings at Recall@30.
 
-## 12. Evaluation Architecture
+## 12. Lexical and Hybrid Retrieval Evaluation
+
+Phase 6 runs vector-only, lexical-only and equal-weight RRF Hybrid against the unchanged 47 scored
+queries and three hard negatives. Metrics, category breakdowns, per-mode score diagnostics and
+mean/median/p95/max latency are written under ignored `artifacts/evaluation/`. A limited A/B comparison
+of BM25 column weights selected `1/1/1` over `2/2/1` because it improved Recall@1 and MRR; no wider
+hyperparameter search was performed. Current Hybrid quality is below the Phase 5 Vector baseline, so
+the production CLI continues to default to vector.
+
+## 13. Evaluation Architecture
 
 Evaluation should be built as a first-class module rather than an ad-hoc script.
 
@@ -430,7 +457,7 @@ Generation evaluation may later include:
 - citation correctness;
 - refusal / insufficient-evidence behavior.
 
-## 13. Non-goals for v0
+## 14. Non-goals for v0
 
 Do not implement yet:
 

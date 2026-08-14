@@ -152,19 +152,27 @@ Acceptance:
 
 ## Phase 6 — Hybrid Retrieval
 
+Status: implemented and evaluated; Vector remains the default because the first RRF baseline regressed.
+
 Goal: improve exact technical term / project name retrieval.
 
 Implement:
 
-- BM25 lexical index;
+- schema v2 SQLite FTS5 trigram index with deterministic lexical profile;
+- explicit v1→v2 migration and FTS lifecycle in the existing atomic apply transaction;
+- BM25 lexical retriever with public/source/scope relational filters;
 - vector + lexical parallel retrieval;
-- deterministic fusion (e.g. RRF or evaluated alternative);
-- retrieval metrics.
+- deterministic configurable RRF with 50/50 candidate pools;
+- vector/lexical/hybrid metrics, category analysis, hard negatives and latency.
 
 Acceptance:
 
 - compare vector-only vs BM25-only vs hybrid on the same golden set;
 - retain benchmark output.
+
+The limited column-weight comparison selected `title/section/content = 1/1/1` over `2/2/1`.
+Equal-weight RRF (`k=60`) did not beat the Vector baseline on the unchanged dataset, so Phase 6 does
+not change the default mode and does not introduce a reranker or rejection threshold.
 
 ## Phase 7 — Lightweight Reranker
 
