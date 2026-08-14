@@ -1,0 +1,16 @@
+version: 1
+
+models:
+  - id: mmarco-mMiniLMv2-L12-H384-v1
+    model_name: cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+    backend: torch
+    max_length: 512
+    batch_size: 16
+    enabled: true
+
+  - id: bge-reranker-base
+    model_name: BAAI/bge-reranker-base
+    backend: torch
+    max_length: 512
+    batch_size: 8
+    enabled: false

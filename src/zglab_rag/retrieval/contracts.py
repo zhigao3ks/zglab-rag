@@ -44,11 +44,15 @@ class RetrievalResult(BaseModel):
     rank: int = Field(gt=0)
     score: float
     distance: float | None = None
-    retriever: Literal["vector", "lexical", "hybrid"] = "vector"
+    retriever: Literal["vector", "lexical", "hybrid", "reranked"] = "vector"
     raw_bm25: float | None = None
     vector_rank: int | None = None
     lexical_rank: int | None = None
     rrf_score: float | None = None
+    original_rank: int | None = None
+    rerank_rank: int | None = None
+    vector_score: float | None = None
+    reranker_score: float | None = None
 
 
 class RetrievalDiagnostics(BaseModel):

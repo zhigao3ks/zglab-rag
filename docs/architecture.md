@@ -274,7 +274,9 @@ src/zglab_rag/
 ├── ingestion/
 │   └── normalize, parse, chunk, embed, index
 ├── retrieval/
-│   └── production vector contracts, filters, over-fetch and read-only retrieval
+│   └── production vector/lexical/hybrid contracts, filters and read-only retrieval
+├── reranking/
+│   └── replaceable providers, passage composition and Vector Top-N reranking
 └── generation/
     └── context construction and grounded answer generation
 ```
@@ -428,7 +430,37 @@ of BM25 column weights selected `1/1/1` over `2/2/1` because it improved Recall@
 hyperparameter search was performed. Current Hybrid quality is below the Phase 5 Vector baseline, so
 the production CLI continues to default to vector.
 
-## 13. Evaluation Architecture
+## 13. Reranker Evaluation
+
+Phase 7 adds an independent `RerankerProvider`; the provider scores `(query, passage)` pairs and does
+not retrieve candidates. `RerankedRetriever` obtains only public/source/scope-filtered Vector Top-N,
+composes one stable `Title + Section + content` passage, validates finite one-dimensional scores and
+sorts descending. Equal scores retain deterministic original-rank then `chunk_id` ordering.
+
+The primary configuration is
+`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, Torch/CPU, batch size 16 and candidate_k 20. Candidate
+10, 20 and 30 are the bounded quality/latency experiment; 20 remains the primary baseline without a broad
+parameter search. Results preserve original rank/vector score separately from rerank rank/relevance
+score. Recall at the candidate cutoff is asserted invariant because re-ranking cannot add candidates.
+
+The evaluator compares Vector and reranked rankings from the same candidate set, including category
+deltas, promotion/demotion, hard negatives, split latency and process RSS. The exact configured
+471 MB model was downloaded through a Hugging Face mirror into Git-ignored `runtime/models/` and its
+SHA-256 was verified; no alternate model, dataset, embedding, composition or chunking was used.
+
+On the 47-query dataset, candidate_k 20 improved Recall@1 from 0.5213 to 0.6809, Recall@3 from
+0.6809 to 0.7872, Recall@5 from 0.7872 to 0.8404 and MRR from 0.6532 to 0.7753. Recall@20 remained
+0.9255, confirming candidate-set invariance. Candidate 10 reached MRR 0.7480 with approximately
+0.90 second median reranker latency; candidate 20 reached 0.7753 at 1.74 seconds; candidate 30 fell
+to 0.7643 at 2.65 seconds. Candidate 20 is therefore the quality choice.
+
+Category results were positive for identity, knowledge, problem and mixed, while project MRR fell
+from 0.9333 to 0.8167. A manual query also exposed a generic README summary outranking the precise
+Spring failure document. The full evaluation process peaked around 1.49 GB RSS. Phase 7 therefore
+passes the quality experiment, but the 2C2G deployment budget is tight enough that production keeps
+Vector as the default and exposes reranking only as an explicit mode.
+
+## 14. Evaluation Architecture
 
 Evaluation should be built as a first-class module rather than an ad-hoc script.
 
@@ -457,7 +489,7 @@ Generation evaluation may later include:
 - citation correctness;
 - refusal / insufficient-evidence behavior.
 
-## 14. Non-goals for v0
+## 15. Non-goals for v0
 
 Do not implement yet:
 

@@ -8,6 +8,9 @@ from zglab_rag.config import Settings, get_settings
 from zglab_rag.domain.models import Scope
 from zglab_rag.embeddings.sentence_transformer import SentenceTransformerEmbeddingProvider
 from zglab_rag.indexing.profile import load_active_embedding_profile
+from zglab_rag.reranking.config import RerankerModelRegistry
+from zglab_rag.reranking.cross_encoder import CrossEncoderRerankerProvider
+from zglab_rag.reranking.service import RerankedRetriever, RerankerRetrievalConfig
 from zglab_rag.retrieval.config import HybridRetrievalConfig, VectorRetrievalConfig
 from zglab_rag.retrieval.contracts import RetrievalFilter, RetrievalQuery
 from zglab_rag.retrieval.hybrid import HybridRetriever
@@ -43,8 +46,13 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     search = subparsers.add_parser("search", help="search public knowledge chunks")
     search.add_argument("query")
-    search.add_argument("--mode", choices=("vector", "lexical", "hybrid"), default="vector")
+    search.add_argument(
+        "--mode",
+        choices=("vector", "lexical", "hybrid", "reranked"),
+        default="vector",
+    )
     search.add_argument("--top-k", type=int)
+    search.add_argument("--candidate-k", type=int, choices=(10, 20, 30))
     search.add_argument("--source", action="append", default=[], dest="source_ids")
     search.add_argument("--scope", action="append", choices=tuple(Scope), default=[])
     search.add_argument("--debug", action="store_true")
@@ -52,15 +60,24 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument(
         "--models-config", type=Path, default=Path("config/embedding-models.yaml")
     )
+    search.add_argument(
+        "--reranker-models-config",
+        type=Path,
+        default=Path("config/reranker-models.yaml"),
+    )
+    search.add_argument(
+        "--reranker-model",
+        default="mmarco-mMiniLMv2-L12-H384-v1",
+    )
+    search.add_argument("--reranker-model-path", type=Path)
     search.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     search.add_argument("--batch-size", type=int, default=32)
     return parser
 
 
 def _build_retriever(args, connection, settings: Settings):
-    lexical = LexicalRetriever(connection, config=retrieval_config(settings))
     if args.mode == "lexical":
-        return lexical
+        return LexicalRetriever(connection, config=retrieval_config(settings))
     profile, model_config = load_active_embedding_profile(args.models_config)
     provider = SentenceTransformerEmbeddingProvider(
         model_config,
@@ -76,7 +93,27 @@ def _build_retriever(args, connection, settings: Settings):
     )
     if args.mode == "vector":
         return vector
-    return HybridRetriever(vector, lexical, config=hybrid_config(settings))
+    if args.mode == "hybrid":
+        lexical = LexicalRetriever(connection, config=retrieval_config(settings))
+        return HybridRetriever(vector, lexical, config=hybrid_config(settings))
+    candidate_k = args.candidate_k or settings.reranker_candidate_k
+    reranker_model = RerankerModelRegistry.from_yaml(
+        args.reranker_models_config
+    ).get_enabled(args.reranker_model)
+    reranker_provider = CrossEncoderRerankerProvider(
+        reranker_model,
+        device=args.device,
+        model_path=args.reranker_model_path,
+    )
+    return RerankedRetriever(
+        vector,
+        reranker_provider,
+        config=RerankerRetrievalConfig(
+            default_top_k=min(settings.reranker_default_top_k, candidate_k),
+            maximum_top_k=candidate_k,
+            candidate_k=candidate_k,
+        ),
+    )
 
 
 def _print_debug(response) -> None:
@@ -132,6 +169,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"   vector_rank={result.vector_rank} "
                     f"lexical_rank={result.lexical_rank} rrf_score={result.rrf_score:.6f}"
+                )
+            if result.retriever == "reranked":
+                print(
+                    f"   reranker_score={result.reranker_score:.6f} "
+                    f"original_vector_rank={result.original_rank} "
+                    f"vector_score={result.vector_score:.6f}"
                 )
         if args.debug:
             _print_debug(response)

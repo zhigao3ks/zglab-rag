@@ -176,9 +176,22 @@ not change the default mode and does not introduce a reranker or rejection thres
 
 ## Phase 7 — Lightweight Reranker
 
+Status: implementation, deterministic unit validation and exact-model CPU benchmark complete. Quality
+improved, but the current 2C2G production budget keeps Vector as the default.
+
 Goal: improve Top-K ordering after hybrid recall.
 
 Implement via the `Reranker` contract.
+
+Implemented boundary:
+
+- independent YAML model registry and `RerankerProvider`;
+- `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` Torch/CPU primary candidate;
+- stable contextual passage composition;
+- Vector-only candidate pools 10/20/30, with 20 as the primary baseline;
+- deterministic reordering with preserved vector/reranker rank and score;
+- evaluation deltas, category metrics, promotion/demotion, hard negatives, latency and RSS;
+- production CLI mode `reranked`, while the default remains `vector`.
 
 Benchmark:
 
@@ -187,6 +200,13 @@ Benchmark:
 - CPU latency and peak memory on the target 2C2G server profile.
 
 The production reranker is optional if measured gain is not worth resource cost.
+
+The exact configured model was downloaded through a Hugging Face mirror into Git-ignored runtime
+storage and its SHA-256 was verified. With candidate_k=20 on the unchanged 47-query dataset,
+Recall@1 improved from 0.5213 to 0.6809, Recall@5 from 0.7872 to 0.8404, and MRR from 0.6532 to
+0.7753 while Recall@20 remained 0.9255. Candidate 20 outperformed 10 and 30 on MRR, but its CPU
+median reranker latency was about 1.74 seconds and the full process peaked around 1.49 GB RSS.
+Reranking is therefore a measured optional mode, not the production default.
 
 ## Phase 8 — Grounded Answer Generation
 

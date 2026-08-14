@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     hybrid_rrf_k: int = 60
     hybrid_vector_weight: float = 1.0
     hybrid_lexical_weight: float = 1.0
+    reranker_candidate_k: int = 20
+    reranker_default_top_k: int = 5
 
 
 def get_settings() -> Settings:

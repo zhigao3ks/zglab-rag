@@ -28,7 +28,7 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前完成 `Phase 6 - lexical retrieval and hybrid search`：
+当前进入 `Phase 7 - reranker evaluation and re-ranking`：
 
 - 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
 - Git source 通过显式 `local_path` 和 include allowlist 获取文档；
@@ -50,6 +50,14 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 - `LexicalRetriever` 以关系表强制 public/source/scope filter；
 - `HybridRetriever` 以配置化 RRF 融合 vector/lexical rank，不混合不同 score 尺度；
 - 当前同一评测集上的 Hybrid 低于 Vector，因此默认仍为 `vector`。
+- Phase 7 新增独立 `RerankerProvider` 和 Vector Top-N → CrossEncoder 重排管线；
+- 候选模型注册在 `config/reranker-models.yaml`，主候选是
+  `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`，CPU/Torch、candidate_k=20；
+- 结果保留 original vector rank/score 与 reranker rank/score，重排不能引入 Top-N 外 chunk；
+- 指定模型已通过 Hugging Face 镜像下载并完成真实 CPU benchmark；candidate_k=20 时
+  Recall@1 从 0.5213 提升到 0.6809，MRR 从 0.6532 提升到 0.7753；
+- 质量收益明确，但重排 CPU 中位延迟约 1.74 秒、进程峰值 RSS 约 1.49 GB，因此生产默认
+  仍为 `vector`，`reranked` 作为显式可选模式保留。
 
 后续阶段：
 
@@ -66,9 +74,9 @@ v4  Persistent vector store / index lifecycle
  ↓
 v5  Production vector retriever
  ↓
-v6  Lexical + Hybrid retrieval（当前）
+v6  Lexical + Hybrid retrieval
  ↓
-v7  Lightweight reranker
+v7  CrossEncoder reranker evaluation（当前）
  ↓
 v8  Grounded answer + citations
 ```
@@ -215,7 +223,15 @@ uv run python -m zglab_rag.retrieval.cli search \
 uv run python -m zglab_rag.retrieval.cli search \
   "结构化 LLM 调用" --mode hybrid --debug
 
+uv run python -m zglab_rag.retrieval.cli search \
+  "Agent 长期记忆和 Context 有什么区别？" \
+  --mode reranked --candidate-k 20 --top-k 5 --debug \
+  --reranker-model-path runtime/models/mmarco-mMiniLMv2-L12-H384-v1
+
 uv run python -m zglab_rag.evaluation.retrieval_compare
+uv run python -m zglab_rag.evaluation.reranker_compare \
+  --candidate-k 10 --candidate-k 20 --candidate-k 30 \
+  --reranker-model-path runtime/models/mmarco-mMiniLMv2-L12-H384-v1
 ```
 
 Retriever 默认 `top_k=5`、最大 50，且不提供 private CLI 开关。过滤采用受控 over-fetch：
@@ -237,6 +253,18 @@ term 的查询会返回 `lexical_not_applicable`，Hybrid 此时只使用 vector
 
 Hybrid 默认候选池各 50，RRF 参数为 `k=60`、`w_vector=w_lexical=1`，同分时依次使用最佳
 单路 rank 与 `chunk_id`。RRF、cosine 与 raw BM25 不可跨模式比较。
+
+Reranker passage 使用唯一的通用格式 `Title + Section + content`，CrossEncoder 按
+`(query, passage)` pair 输出 higher-is-better relevance score。正式结果不会覆盖 vector score；
+同分时按 original vector rank、再按 `chunk_id` 排序。candidate_k 仅允许 10/20/30，主要
+baseline 为 20。指定模型的 471 MB 权重通过 Hugging Face 镜像下载到 Git ignored 的
+`runtime/models/`，SHA-256 校验通过；没有替换模型、Embedding、chunking 或评测集。
+
+真实 benchmark 选择 candidate_k=20：与相同候选集的 Vector 排序相比，Recall@1/3/5
+分别从 0.5213/0.6809/0.7872 提升到 0.6809/0.7872/0.8404，MRR 从 0.6532 提升到
+0.7753，Recall@20 保持 0.9255。candidate_k=10 较快但质量较低；30 的延迟更高且 MRR
+低于 20。CPU 上 20 候选的重排中位延迟约 1.74 秒、模型加载约 2.70 秒、完整评测进程
+峰值 RSS 约 1.49 GB。质量验收通过，但当前 2C2G 生产预算偏紧，默认仍使用 Vector。
 
 ## 安全边界
 
