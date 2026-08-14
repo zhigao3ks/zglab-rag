@@ -230,6 +230,10 @@ src/zglab_rag/
 │   └── HTTP protocol, request/response models
 ├── domain/
 │   └── framework-independent entities and contracts
+├── embeddings/
+│   └── replaceable providers and model-specific query/document encoding
+├── evaluation/
+│   └── tracked retrieval datasets, in-memory ranking and benchmark orchestration
 ├── sources/
 │   └── local/Git source adapters and registry
 ├── ingestion/
@@ -241,6 +245,11 @@ src/zglab_rag/
 ```
 
 Dependencies should point inward toward domain contracts rather than coupling the domain to FastAPI or a specific AI framework.
+
+Phase 3 keeps benchmarking outside production retrieval. The benchmark composes either source-faithful
+chunk content or title/section-enriched text, encodes queries and documents through separate provider
+methods, and ranks the small corpus with in-memory cosine similarity. It does not persist embeddings or
+introduce a vector database.
 
 ## 7. Storage
 

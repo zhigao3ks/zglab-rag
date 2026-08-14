@@ -1,0 +1,411 @@
+version: 1
+
+queries:
+  - id: identity-01
+    query: 你叫什么名字，现在是什么身份？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 基本身份]
+
+  - id: identity-02
+    query: 我可以从哪些公开渠道联系或了解你？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 基本身份]
+
+  - id: identity-03
+    query: 你做 AI 工程时最核心的技术定位是什么？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 技术定位]
+
+  - id: identity-04
+    query: 你平时主要研究哪些大模型和智能体方向？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 主要技术方向, LLM / Agent]
+
+  - id: identity-05
+    query: 你对 RAG 系统重点关注哪些环节？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 主要技术方向, RAG]
+
+  - id: identity-06
+    query: 除了模型，你有哪些后端和部署方面的工程经验？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 主要技术方向, AI Engineering]
+
+  - id: identity-07
+    query: 你的公开知识笔记按什么类型组织？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 知识体系]
+
+  - id: identity-08
+    query: 如果公开资料里没有证据，你会怎样回答事实问题？
+    category: identity
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 回答边界]
+
+  - id: knowledge-01
+    query: 你的 Agent 长期记忆一般是怎么分层的？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Agent Memory 的分层模型]
+
+  - id: knowledge-02
+    query: Agent 保存下来的记忆和这一轮送进模型的上下文有什么区别？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Memory 和 Context 是两个不同概念]
+
+  - id: knowledge-03
+    query: 哪些记忆写入适合放到后台慢慢做，而不是阻塞用户请求？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Memory Write：什么时候写入, Background Consolidation]
+
+  - id: knowledge-04
+    query: 多项目 Agent 怎样防止把一个项目的记忆带到另一个项目？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Memory Scope：必须避免串项目]
+
+  - id: knowledge-05
+    query: 成熟的记忆系统为什么还需要主动遗忘？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Forgetting：成熟记忆系统必须会忘]
+
+  - id: knowledge-06
+    query: 固定工作流和真正会自主决策的 Agent 应该怎么区分？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, Agent 与 Workflow 的区别]
+
+  - id: knowledge-07
+    query: 给 Agent 工具权限时，怎样通过权限和沙箱避免失控？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, 7. Permission + Sandbox：让 Agent 有能力但不能失控]
+
+  - id: knowledge-08
+    query: 哪些智能体操作应该暂停并交给人来决定？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, 8. Human-in-the-loop：什么时候必须让人决定]
+
+  - id: knowledge-09
+    query: 生产级 Agent 需要记录什么，才能解释它为什么失败？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, 11. Observability：必须知道 Agent 为什么失败]
+
+  - id: knowledge-10
+    query: 为什么不能只凭主观感觉说 Agent 变聪明了？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, 12. Evaluation：不能靠“感觉更聪明了”]
+
+  - id: knowledge-11
+    query: 接不同厂商的结构化大模型接口时，为什么需要独立 Provider 层？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/reliable-structured-llm-calls.md
+        section_path: [结构化大模型调用如何可靠落地：Provider、宽松边界与确定性降级, 为什么需要 Provider 适配层]
+
+  - id: knowledge-12
+    query: 结构化 LLM 调用失败后，重试和节点降级应该怎样设计？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/reliable-structured-llm-calls.md
+        section_path: [结构化大模型调用如何可靠落地：Provider、宽松边界与确定性降级, 错误分类和有限重试]
+      - source_id: notes
+        source_path: knowledge/reliable-structured-llm-calls.md
+        section_path: [结构化大模型调用如何可靠落地：Provider、宽松边界与确定性降级, 节点级降级]
+
+  - id: knowledge-13
+    query: 简历生成中的事实校验要怎样检查数字和百分比？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/evidence-grounded-resume-generation.md
+        section_path: [把大模型生成限制在事实边界内：Evidence 驱动的内容生成与校验, 确定性校验检查什么, 数字和百分比]
+
+  - id: knowledge-14
+    query: 一个没有后端的浏览器工具，为什么仍不能直接宣称数据绝对安全？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/browser-local-processing-privacy-boundaries.md
+        section_path: [浏览器本地处理不等于天然安全：工具网站的数据与隐私边界, “没有后端”还不够]
+
+  - id: knowledge-15
+    query: 实时转写和最终转写的 sentenceId 对不上时，应该依据什么来合并？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/reconciling-realtime-and-final-transcripts-by-timeline.md
+        section_path: [同一句话为什么出现两遍：实时转写与最终转写的时间线对齐, 第三步：按证据强度分层匹配]
+
+  - id: knowledge-16
+    query: 移动网页录音点击结束后，怎样保证未上传分片最终能持久化？
+    category: knowledge
+    relevant:
+      - source_id: notes
+        source_path: knowledge/durable-h5-audio-chunk-upload.md
+        section_path: [结束按钮不是最后一步：移动 H5 录音分片持久化与后台续传, 正确的结束状态机]
+
+  - id: project-01
+    query: ResumeTailor 为什么把 Evidence 当作生成链路里的事实主键？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计, 关键技术点, Evidence 是事实主键]
+
+  - id: project-02
+    query: 简历 Agent 为什么选择固定工作流而不是让模型自由编排全部步骤？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计, 系统设计, 固定工作流]
+
+  - id: project-03
+    query: Astro 工具箱是怎样用统一注册表支持不断新增工具的？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱, 先建立统一工具注册表]
+
+  - id: project-04
+    query: 在本地工具站里，Astro 页面和 Preact Island 分别负责什么？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱, Astro 页面与 Preact Island 如何分工]
+
+  - id: project-05
+    query: 为什么处理很大的 JSON 要放进 Web Worker？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱, 大 JSON 为什么需要 Web Worker]
+
+  - id: project-06
+    query: 移动录音系统里健康快照和状态事件各自解决什么问题？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/observable-mobile-recording-pipeline.md
+        section_path: [从“录音正常”到证据链完整：移动会议录音的可观测性改造, 快照和事件分别解决什么]
+
+  - id: project-07
+    query: 判断录音健康状态时，为什么应该从当前事实派生而不是看一条旧事件？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/observable-mobile-recording-pipeline.md
+        section_path: [从“录音正常”到证据链完整：移动会议录音的可观测性改造, 健康状态应由当前事实派生]
+
+  - id: project-08
+    query: 两个长期分叉的仓库同步时，为什么要先找共同基线？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/dual-repository-sync-with-environment-isolation.md
+        section_path: [两个长期分叉仓库如何安全同步：以测试仓与生产仓联调为例, 最重要的三个原则, 以共同基线判断变化，而不是只比较最终文件]
+
+  - id: project-09
+    query: 测试仓和生产仓合并时，配置文件为什么是风险最高的一类？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/dual-repository-sync-with-environment-isolation.md
+        section_path: [两个长期分叉仓库如何安全同步：以测试仓与生产仓联调为例, 配置文件为什么最危险]
+
+  - id: project-10
+    query: 从属 H5 接 CAS 时，state 和短时交换 Cookie 分别用来解决什么？
+    category: project
+    relevant:
+      - source_id: notes
+        source_path: projects/subordinate-app-cas-unified-auth.md
+        section_path: [从多入口免登到统一身份：从属应用接入 CAS 的设计实践, 为什么需要 state 和短时交换 Cookie]
+
+  - id: problem-01
+    query: Spring 服务有多个构造器时，为什么单测通过但启动却找无参构造器？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/spring-multiple-constructors-startup-failure.md
+        section_path: [单测和打包都通过，Spring 为什么还在启动时寻找无参构造器, 为什么现有测试没有发现]
+
+  - id: problem-02
+    query: 简历匹配出了不少内容，最后文档仍为空的直接原因是什么？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/resume-matches-but-generated-document-empty.md
+        section_path: [匹配不少，为什么最终简历仍然是空的：一次多节点生成链路复盘, 原因分析, 直接原因：Planner 丢失了内容覆盖]
+
+  - id: problem-03
+    query: CentOS 7 发布 Python 3.12 项目时，greenlet 为什么会卡在旧 GCC 编译？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/centos7-python312-release-failure-chain.md
+        section_path: [代码通过测试，为什么生产发布仍连续失败：CentOS 7 + Python 3.12 发布链路复盘, 故障三：`greenlet` 回退源码编译，旧 GCC 无法完成]
+
+  - id: problem-04
+    query: 后端已经正常运行，Nginx 首页却返回 403 时应该从哪里排查？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/centos7-python312-release-failure-chain.md
+        section_path: [代码通过测试，为什么生产发布仍连续失败：CentOS 7 + Python 3.12 发布链路复盘, 故障四：后端正常，前端首页 403]
+
+  - id: problem-05
+    query: 发布脚本沿用已经失效的健康检查地址，为什么会触发假回滚？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/stale-health-check-causes-false-rollback.md
+        section_path: [应用已经启动，却被发布脚本自动回滚：一次过期健康检查的排查复盘, 原因分析]
+
+  - id: problem-06
+    query: WebSocket 收到 1000 和 Bye 明明是正常关闭，为什么恢复流程仍记成失败？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/normal-websocket-close-misclassified-during-recovery.md
+        section_path: [1000 / Bye 明明是正常关闭，为什么却被记成录音失败, 这次误判是怎样发生的]
+
+  - id: problem-07
+    query: 录音停止很久后会议仍显示进行中，恢复窗口设计漏掉了什么？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/meeting-stuck-recording-after-recovery-expiry.md
+        section_path: [最后音频停了两小时，会议为什么还在进行中：一次僵尸录音会议复盘, 原因分析, 直接原因：恢复窗口只回收资源，不改变业务状态]
+
+  - id: problem-08
+    query: Spring 构造器注入歧义应该如何修复，而不是硬加一个无参构造器？
+    category: problem
+    relevant:
+      - source_id: notes
+        source_path: problems/spring-multiple-constructors-startup-failure.md
+        section_path: [单测和打包都通过，Spring 为什么还在启动时寻找无参构造器, 正确修复方式]
+
+  - id: mixed-01
+    query: 你为什么坚持先定义评测标准，再调整模型或 Agent 流程？
+    category: mixed_technical
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 长期工程原则, Evaluation Before Optimization]
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, 12. Evaluation：不能靠“感觉更聪明了”]
+
+  - id: mixed-02
+    query: Evidence First 这个原则在简历内容生成中具体怎样落地？
+    category: mixed_technical
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 长期工程原则, Evidence First]
+      - source_id: notes
+        source_path: knowledge/evidence-grounded-resume-generation.md
+        section_path: [把大模型生成限制在事实边界内：Evidence 驱动的内容生成与校验, 核心概念, EvidenceItem]
+
+  - id: mixed-03
+    query: 为什么你倾向用确定性 Workflow 约束简历 Agent，而不是把规则都写进 Prompt？
+    category: mixed_technical
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 长期工程原则, Rules Are Not Prompts]
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计, 系统设计, 固定工作流]
+
+  - id: mixed-04
+    query: 先把系统做得可观测，这个原则在移动录音项目里体现在哪里？
+    category: mixed_technical
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 长期工程原则, Observable Before Intelligent]
+      - source_id: notes
+        source_path: projects/observable-mobile-recording-pipeline.md
+        section_path: [从“录音正常”到证据链完整：移动会议录音的可观测性改造, 观测对象必须拆成多条链路]
+
+  - id: mixed-05
+    query: 浏览器用 Web Worker 在本地处理大文件，性能改善是否也意味着隐私边界改变了？
+    category: mixed_technical
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱, 大 JSON 为什么需要 Web Worker]
+      - source_id: notes
+        source_path: knowledge/browser-local-processing-privacy-boundaries.md
+        section_path: [浏览器本地处理不等于天然安全：工具网站的数据与隐私边界, Web Worker 解决性能，不改变隐私结论]
+
+  - id: hard-negative-01
+    query: 你最拿手的红烧肉配方是什么？
+    category: hard_negative
+    relevant: []
+
+  - id: hard-negative-02
+    query: 请确认你上一份工作的具体薪资和奖金数额。
+    category: hard_negative
+    relevant: []
+
+  - id: hard-negative-03
+    query: 你对量子引力最新实验结果有什么独家结论？
+    category: hard_negative
+    relevant: []

@@ -6,11 +6,23 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi",
+  "numpy>=2,<3",
+  "psutil>=6,<8",
   "pydantic>=2",
   "pydantic-settings",
   "pyyaml",
+  "sentence-transformers>=5.1,<6",
+  "torch==2.7.1",
   "uvicorn[standard]",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [dependency-groups]
 dev = [

@@ -17,6 +17,7 @@ runtime/
 indexes/
 models/
 logs/
+artifacts/
 *.db
 *.sqlite
 *.sqlite3

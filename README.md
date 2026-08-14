@@ -28,13 +28,15 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前处于 `Phase 2 - controlled local source acquisition`：
+当前处于 `Phase 3 - embedding evaluation & benchmark`：
 
 - 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
 - Git source 通过显式 `local_path` 和 include allowlist 获取文档；
 - exclude 规则优先，文件顺序、document/chunk ID 与 provenance 保持稳定；
 - Git Adapter 只读取本地 checkout 和 HEAD revision，不负责 clone、pull 或 fetch；
-- 暂不实现 Embedding、索引和检索。
+- 候选 Embedding 模型由 `config/embedding-models.yaml` 注册；
+- `evaluation/retrieval.yaml` 保存 50 条可追踪到 section 的检索标注；
+- benchmark 只使用全量 chunk 的内存 cosine，不实现持久化索引或生产检索。
 
 后续阶段：
 
@@ -66,7 +68,10 @@ zglab-rag/
 ├── .env.example
 ├── .gitignore
 ├── config/
+│   ├── embedding-models.yaml
 │   └── sources.yaml
+├── evaluation/
+│   └── retrieval.yaml
 ├── docs/
 │   ├── architecture.md
 │   └── knowledge-model.md
@@ -77,6 +82,8 @@ zglab-rag/
 │   └── zglab_rag/
 │       ├── api/
 │       ├── domain/
+│       ├── embeddings/
+│       ├── evaluation/
 │       ├── ingestion/
 │       ├── retrieval/
 │       ├── generation/
@@ -123,6 +130,26 @@ Sync Layer 或部署任务负责。
 
 Chunk 参数可通过 `ZGLAB_RAG_CHUNK_TARGET_SIZE`、
 `ZGLAB_RAG_CHUNK_MAX_SIZE` 和 `ZGLAB_RAG_CHUNK_OVERLAP` 配置。
+
+在 `identity-profile` 和 `notes` 的真实 chunk 上运行单个 benchmark：
+
+```bash
+uv run python -m zglab_rag.evaluation.embedding_benchmark \
+  --source identity-profile \
+  --source notes \
+  --model bge-small-zh-v1.5 \
+  --device cpu \
+  --composition contextual
+```
+
+`--all` 会运行所有 enabled model 与两种 document composition。运行结果写入已忽略的
+`artifacts/benchmarks/`；评测集和模型配置则纳入版本控制。显式请求 `cuda` 但 PyTorch
+无法使用 CUDA 时命令会报错，不会静默回退到 CPU。
+
+Benchmark 的 Recall@K 按 relevant section target 计算：同一超长 section 的任一二次切片
+命中即视为该 target 命中；多个 relevant target 分别计入 recall。`hard_negative` 在尚未定义
+相似度拒绝阈值的 Phase 3 中不进入 Recall/MRR 分母，并会作为 skipped query 记录。
+总指标输出 Recall@1/3/5/10/20/30 与 MRR，并按 scored query category 输出对应 breakdown。
 
 ## 安全边界
 

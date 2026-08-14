@@ -1,0 +1,27 @@
+version: 1
+
+models:
+  - id: bge-small-zh-v1.5
+    model_name: BAAI/bge-small-zh-v1.5
+    backend: sentence_transformers
+    query_mode: bge_zh_instruction
+    normalize: true
+    max_length: 512
+    enabled: true
+
+  - id: multilingual-e5-small
+    model_name: intfloat/multilingual-e5-small
+    backend: sentence_transformers
+    query_mode: e5_prefix
+    normalize: true
+    max_length: 512
+    enabled: true
+
+  - id: qwen3-embedding-0.6b
+    model_name: Qwen/Qwen3-Embedding-0.6B
+    backend: sentence_transformers
+    query_mode: model_query_prompt
+    normalize: true
+    max_length: 32768
+    # Deferred on the 6 GiB, CPU-only benchmark environment; keep as a configured candidate.
+    enabled: false

@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Protocol
 
+import numpy as np
+from numpy.typing import NDArray
+
 from zglab_rag.domain.models import (
     KnowledgeChunk,
     KnowledgeDocument,
@@ -24,9 +27,18 @@ class Chunker(Protocol):
 
 
 class EmbeddingProvider(Protocol):
-    def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
+    @property
+    def model_name(self) -> str: ...
 
-    def embed_query(self, text: str) -> list[float]: ...
+    @property
+    def dimension(self) -> int: ...
+
+    @property
+    def device(self) -> str: ...
+
+    def encode_documents(self, texts: Sequence[str]) -> NDArray[np.float32]: ...
+
+    def encode_queries(self, texts: Sequence[str]) -> NDArray[np.float32]: ...
 
 
 class IndexWriter(Protocol):
