@@ -232,23 +232,31 @@ Hybrid 使用可配置候选池，生产 baseline 为每个分支 50 条，并�
 
 ### Generation 流程
 
+Phase 8 实现的确定性闭环：
+
 ```text
 问题
-+
-选定证据
-+
-Identity / Persona 规则
-        ↓
-Context Builder
-        ↓
-LLM
-        ↓
-回答
-+
-来源引用
+  ↓
+Retrieval（vector 默认 / reranked 显式可选）
+  ↓
+RetrievalResult[]
+  ↓
+ContextBuilder：短 Evidence ID（E1…En）+ 预算截断 + 注入边界
+  ↓
+GenerationProvider（OpenAI-compatible）
+  ↓
+结构化 JSON（answer / claims / citations / insufficient_evidence）
+  ↓
+CitationValidator（确定性代码校验，最多 1 次修复重试）
+  ↓
+Evidence ID → chunk_id / source_path / section_path 映射
+  ↓
+GroundedAnswer + Sources
 ```
 
-Persona 绝不能成为证据来源。
+Persona 绝不能成为证据来源。Citation 合法性、归属、覆盖率、insufficient-evidence 规则与
+private 边界都由代码校验，不只依赖 Prompt。检索为空、模型判定不足或校验无法安全恢复时，
+返回固定拒答文本；不设置基于 score 的拒答阈值。
 
 ## 6. Package 边界
 
@@ -275,7 +283,7 @@ src/zglab_rag/
 ├── reranking/
 │   └── 可替换 Provider、passage composition 和 Vector Top-N 重排
 └── generation/
-    └── Context 构建和基于证据的回答生成
+    └── Evidence context、Persona、结构化生成、Citation 校验与问答编排
 ```
 
 依赖应指向内部 Domain contract，不应让 Domain 耦合 FastAPI 或具体 AI 框架。
@@ -450,7 +458,27 @@ Identity、Knowledge、Problem 和 Mixed 分类的结果为正向，Project MRR 
 约 1.49 GB RSS。因此 Phase 7 的质量实验成功，但 2C2G 部署预算仍然偏紧；生产保持 Vector
 为默认模式，只显式提供 Reranking。完整记录见 `docs/evaluations/phase-7-reranker.md`。
 
-## 14. Evaluation 架构
+## 14. Grounded Generation 与 Citation
+
+Phase 8 冻结 Retrieval baseline（默认 Vector），在 `generation/` 建立确定性问答闭环：
+
+- `ContextBuilder` 将已过滤的 RetrievalResult 转为带短 Evidence ID 的 EvidenceItem，只把
+  Evidence ID、Title、Section 和 Content 交给 LLM；预算截断确定性保留高 rank 完整 chunk；
+- Persona 与 Evidence 规则写在 system message，问题与 Evidence 写在 user message，
+  Evidence 被明确标注为只读数据，防止 Prompt 注入获得系统优先级；
+- `GenerationProvider` protocol 隔离厂商实现；第一版为 OpenAI-compatible HTTP Provider，
+  网络重试留在 Provider 层，API Key 不进入日志、Prompt 或诊断；
+- 输出为 claim-level citation 的结构化 JSON；`CitationValidator` 确定性检查格式、归属、
+  覆盖率与 insufficient-evidence 规则，修复重试最多 1 次；
+- `GroundedAnswerService` 是固定 workflow 而不是 Agent；失败模型区分 RetrievalFailure、
+  ProviderFailure、InvalidStructuredOutput、CitationValidationFailure 与
+  InsufficientEvidence；
+- 独立评测集 `evaluation/generation.yaml` 与确定性指标（evidence hit、citation
+  validity/coverage、should-answer 与 insufficient correctness），不引入 LLM Judge。
+
+完整设计见 `docs/generation-grounding.md`。
+
+## 15. Evaluation 架构
 
 Evaluation 应作为一等模块建设，而不是临时脚本。
 
@@ -479,7 +507,7 @@ Generation evaluation 未来可以包括：
 - citation correctness；
 - refusal 或 insufficient-evidence behavior。
 
-## 15. v0 暂不实现的内容
+## 16. v0 暂不实现的内容
 
 暂不实现：
 

@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from time import perf_counter
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+from zglab_rag.generation.citation import (
+    CitationValidation,
+    resolve_sources,
+    validate_generated_answer,
+)
+from zglab_rag.generation.context import ContextBudget, ContextBuilder
+from zglab_rag.generation.contracts import (
+    GeneratedAnswer,
+    GeneratedClaim,
+    GenerationDiagnostics,
+    GenerationRequest,
+    GenerationResult,
+    GenerationStatus,
+    GroundedAnswer,
+    ProviderResponse,
+    Retriever,
+)
+from zglab_rag.generation.errors import (
+    CitationValidationFailure,
+    GenerationError,
+    InvalidStructuredOutput,
+    ProviderFailure,
+    RetrievalFailure,
+)
+from zglab_rag.generation.persona import INSUFFICIENT_EVIDENCE_ANSWER
+from zglab_rag.generation.structured import parse_structured_answer
+from zglab_rag.retrieval.contracts import RetrievalQuery
+
+RetrievalMode = Literal["vector", "reranked"]
+
+
+class GroundedGenerationConfig(BaseModel):
+    retrieval_mode: RetrievalMode = "vector"
+    retrieval_top_k: int = Field(default=5, ge=1, le=8)
+    max_repair_attempts: int = Field(default=1, ge=0, le=1)
+    budget: ContextBudget = Field(default_factory=ContextBudget)
+
+
+def render_claims_answer(claims: Sequence[GeneratedClaim]) -> str:
+    """Deterministically render the public answer from validated claims only.
+
+    The provider's free-form answer text never reaches the user; every visible
+    factual sentence has passed claim-level citation validation.
+    """
+    return "\n".join(claim.text for claim in claims)
+
+
+class GroundedAnswerService:
+    """Deterministic Question → Retrieval → Context → Provider → Validation workflow.
+
+    This is a fixed orchestration, not an agent loop. Semantic repair is
+    limited to one retry describing the violated rules; network retries live in
+    the provider layer.
+    """
+
+    def __init__(
+        self,
+        retriever: Retriever,
+        provider,
+        *,
+        context_builder: ContextBuilder | None = None,
+        config: GroundedGenerationConfig | None = None,
+    ) -> None:
+        self.retriever = retriever
+        self.provider = provider
+        self.config = config or GroundedGenerationConfig()
+        self.context_builder = context_builder or ContextBuilder(self.config.budget)
+
+    def answer(
+        self,
+        question: str,
+        *,
+        retrieval_mode: RetrievalMode | None = None,
+        top_k: int | None = None,
+    ) -> GenerationResult:
+        mode = retrieval_mode or self.config.retrieval_mode
+        retrieval_top_k = top_k or self.config.retrieval_top_k
+        started = perf_counter()
+
+        retrieval_started = perf_counter()
+        try:
+            response = self.retriever.retrieve(
+                RetrievalQuery(text=question, top_k=retrieval_top_k)
+            )
+        except GenerationError:
+            raise
+        except Exception as exc:
+            raise RetrievalFailure(f"retrieval failed: {exc}") from exc
+        retrieval_ms = (perf_counter() - retrieval_started) * 1000
+
+        context = self.context_builder.build(question, response.results)
+        if not context.evidence:
+            return self._result(
+                question,
+                status=GenerationStatus.INSUFFICIENT_EVIDENCE,
+                answer=GroundedAnswer(
+                    answer=INSUFFICIENT_EVIDENCE_ANSWER, insufficient_evidence=True
+                ),
+                mode=mode,
+                retrieval_top_k=retrieval_top_k,
+                evidence_count=0,
+                retrieval_ms=retrieval_ms,
+                generation_ms=0.0,
+                started=started,
+                failure_reason="empty_retrieval",
+            )
+
+        request = GenerationRequest(
+            question=question,
+            system_prompt=context.system_prompt,
+            user_prompt=context.user_prompt,
+            allowed_evidence_ids=context.evidence_ids,
+        )
+
+        generation_ms = 0.0
+        repair_attempts = 0
+        last_response: ProviderResponse | None = None
+        semantic_error: InvalidStructuredOutput | CitationValidationFailure | None = None
+        generated: GeneratedAnswer | None = None
+        validation: CitationValidation | None = None
+        for attempt in range(self.config.max_repair_attempts + 1):
+            try:
+                last_response = self.provider.generate(request)
+            except ProviderFailure as exc:
+                return self._result(
+                    question,
+                    status=GenerationStatus.FAILED,
+                    answer=GroundedAnswer(answer="", insufficient_evidence=True),
+                    mode=mode,
+                    retrieval_top_k=retrieval_top_k,
+                    evidence_count=len(context.evidence),
+                    retrieval_ms=retrieval_ms,
+                    generation_ms=generation_ms,
+                    started=started,
+                    failure_reason=f"ProviderFailure: {exc}",
+                )
+            generation_ms += last_response.latency_ms
+            try:
+                generated = parse_structured_answer(last_response.text)
+                validation = validate_generated_answer(generated, context.evidence)
+                if not validation.ok:
+                    raise CitationValidationFailure("; ".join(validation.violations))
+                repair_attempts = attempt
+                semantic_error = None
+                break
+            except (InvalidStructuredOutput, CitationValidationFailure) as exc:
+                semantic_error = exc
+                repair_attempts = attempt + 1
+                request = request.model_copy(
+                    update={
+                        "repair_feedback": (
+                            f"上一次输出违反规则：{exc}。"
+                            "请重新输出一个严格符合 JSON schema 与 citation 规则的结果。"
+                        )
+                    }
+                )
+
+        if semantic_error is not None or generated is None or validation is None:
+            return self._result(
+                question,
+                status=GenerationStatus.INSUFFICIENT_EVIDENCE,
+                answer=GroundedAnswer(
+                    answer=INSUFFICIENT_EVIDENCE_ANSWER, insufficient_evidence=True
+                ),
+                mode=mode,
+                retrieval_top_k=retrieval_top_k,
+                evidence_count=len(context.evidence),
+                retrieval_ms=retrieval_ms,
+                generation_ms=generation_ms,
+                started=started,
+                repair_attempts=self.config.max_repair_attempts,
+                provider_response=last_response,
+                failure_reason=f"{type(semantic_error).__name__}: {semantic_error}",
+                raw_answer=None if last_response is None else last_response.text,
+            )
+
+        if generated.insufficient_evidence:
+            grounded = GroundedAnswer(
+                answer=INSUFFICIENT_EVIDENCE_ANSWER, insufficient_evidence=True
+            )
+            status = GenerationStatus.INSUFFICIENT_EVIDENCE
+        else:
+            grounded = GroundedAnswer(
+                answer=render_claims_answer(generated.claims),
+                claims=generated.claims,
+                sources=resolve_sources(validation.cited_evidence_ids, context.evidence),
+                insufficient_evidence=False,
+            )
+            status = GenerationStatus.ANSWERED
+
+        return self._result(
+            question,
+            status=status,
+            answer=grounded,
+            mode=mode,
+            retrieval_top_k=retrieval_top_k,
+            evidence_count=len(context.evidence),
+            retrieval_ms=retrieval_ms,
+            generation_ms=generation_ms,
+            started=started,
+            repair_attempts=repair_attempts,
+            provider_response=last_response,
+            raw_answer=generated.answer,
+        )
+
+    def _result(
+        self,
+        question: str,
+        *,
+        status: GenerationStatus,
+        answer: GroundedAnswer,
+        mode: str,
+        retrieval_top_k: int,
+        evidence_count: int,
+        retrieval_ms: float,
+        generation_ms: float,
+        started: float,
+        repair_attempts: int = 0,
+        provider_response: ProviderResponse | None = None,
+        failure_reason: str | None = None,
+        raw_answer: str | None = None,
+    ) -> GenerationResult:
+        return GenerationResult(
+            status=status,
+            question=question,
+            answer=answer,
+            diagnostics=GenerationDiagnostics(
+                retrieval_mode=mode,
+                retrieval_top_k=retrieval_top_k,
+                evidence_count=evidence_count,
+                retrieval_latency_ms=retrieval_ms,
+                provider=None if provider_response is None else provider_response.provider,
+                model=None if provider_response is None else provider_response.model,
+                generation_latency_ms=generation_ms,
+                total_latency_ms=(perf_counter() - started) * 1000,
+                repair_attempts=repair_attempts,
+                input_tokens=(
+                    None if provider_response is None else provider_response.usage.input_tokens
+                ),
+                output_tokens=(
+                    None if provider_response is None else provider_response.usage.output_tokens
+                ),
+            ),
+            failure_reason=failure_reason,
+            raw_answer=raw_answer,
+        )

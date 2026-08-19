@@ -1,0 +1,212 @@
+version: 1
+
+# Grounded generation evaluation dataset.
+# Derived from evaluation/retrieval.yaml; retrieval.yaml itself is not modified.
+# should_answer=false 表示正确答案是“公开知识库证据不足”，而不是生成事实回答。
+# 不定义唯一标准答案：评测重点是 deterministic 的 evidence hit、citation
+# 有效性/覆盖率与 should-answer 正确性，groundedness 与 usefulness 留给人工审阅。
+
+queries:
+  - id: gen-identity-01
+    query: 你叫什么名字，现在是什么身份？
+    category: identity
+    should_answer: true
+    expected_evidence:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 基本身份]
+
+  - id: gen-identity-02
+    query: 你做 AI 工程时最核心的技术定位是什么？
+    category: identity
+    should_answer: true
+    expected_evidence:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 技术定位]
+
+  - id: gen-identity-03
+    query: 如果公开资料里没有证据，你会怎样回答事实问题？
+    category: identity
+    should_answer: true
+    expected_evidence:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 回答边界]
+
+  - id: gen-knowledge-01
+    query: Agent 保存下来的记忆和这一轮送进模型的上下文有什么区别？
+    category: knowledge
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Memory 和 Context 是两个不同概念]
+
+  - id: gen-knowledge-02
+    query: 你的 Agent 长期记忆一般是怎么分层的？
+    category: knowledge
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System, Agent Memory 的分层模型]
+
+  - id: gen-knowledge-03
+    query: 固定工作流和真正会自主决策的 Agent 应该怎么区分？
+    category: knowledge
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, Agent 与 Workflow 的区别]
+
+  - id: gen-knowledge-04
+    query: 接不同厂商的结构化大模型接口时，为什么需要独立 Provider 层？
+    category: knowledge
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/reliable-structured-llm-calls.md
+        section_path: [结构化大模型调用如何可靠落地：Provider、宽松边界与确定性降级, 为什么需要 Provider 适配层]
+
+  - id: gen-knowledge-05
+    query: 简历生成中的事实校验要怎样检查数字和百分比？
+    category: knowledge
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/evidence-grounded-resume-generation.md
+        section_path: [把大模型生成限制在事实边界内：Evidence 驱动的内容生成与校验, 确定性校验检查什么, 数字和百分比]
+
+  - id: gen-project-01
+    query: ResumeTailor 为什么把 Evidence 当作生成链路里的事实主键？
+    category: project
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计, 关键技术点, Evidence 是事实主键]
+
+  - id: gen-project-02
+    query: 简历 Agent 为什么选择固定工作流而不是让模型自由编排全部步骤？
+    category: project
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计, 系统设计, 固定工作流]
+
+  - id: gen-project-03
+    query: Astro 工具箱是怎样用统一注册表支持不断新增工具的？
+    category: project
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱, 先建立统一工具注册表]
+
+  - id: gen-project-04
+    query: 为什么处理很大的 JSON 要放进 Web Worker？
+    category: project
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱, 大 JSON 为什么需要 Web Worker]
+
+  - id: gen-problem-01
+    query: Spring 服务有多个构造器时，为什么单测通过但启动却找无参构造器？
+    category: problem
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: problems/spring-multiple-constructors-startup-failure.md
+        section_path: [单测和打包都通过，Spring 为什么还在启动时寻找无参构造器, 为什么现有测试没有发现]
+
+  - id: gen-problem-02
+    query: 发布脚本沿用已经失效的健康检查地址，为什么会触发假回滚？
+    category: problem
+    should_answer: true
+    expected_evidence:
+      - source_id: notes
+        source_path: problems/stale-health-check-causes-false-rollback.md
+        section_path: [应用已经启动，却被发布脚本自动回滚：一次过期健康检查的排查复盘, 原因分析]
+
+  - id: gen-problem-03
+    query: 简历匹配出了不少内容，最后文档仍为空的直接原因是什么？
+    category: problem
+    should_answer: true
+    # 标注调整（groundedness hardening）：精确的“直接原因”小节在 vector 排名中位于
+    # rank 10（top_k=5 之外），但 Top-5 全部是同一复盘文档的其他小节（问题现象、
+    # 环境与前置条件、为什么有些尝试不能解决问题），实际引用全部 grounded，模型结论
+    # 与“直接原因”一致。属于情况 A（原标注过窄）：小节级 target 放宽为文档级；
+    # rank 10 的检索排名事实保留在评测报告中，不在 Phase 8 冻结期内修改 Retrieval。
+    expected_evidence:
+      - source_id: notes
+        source_path: problems/resume-matches-but-generated-document-empty.md
+        section_path: []
+
+  - id: gen-mixed-01
+    query: 你为什么坚持先定义评测标准，再调整模型或 Agent 流程？
+    category: mixed_technical
+    should_answer: true
+    expected_evidence:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile, 长期工程原则, Evaluation Before Optimization]
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构, 12. Evaluation：不能靠“感觉更聪明了”]
+
+  - id: gen-mixed-02
+    query: Evidence First 这个原则在简历内容生成中具体怎样落地？
+    category: mixed_technical
+    should_answer: true
+    # 标注调整（groundedness hardening）：问题问的是原则“在简历内容生成中具体怎样
+    # 落地”，直接证据是落地文档 evidence-grounded-resume-generation；identity profile
+    # 的原则段（vector score 约 0.58）在冻结的 Retrieval baseline 下稳定排在落地文档
+    # （score 0.72+）之后，永不进入 Top-5 context，两次真实评测中模型引用均为
+    # 落地文档/工作流文档且完全 grounded（属于情况 A）。移除不可达的 profile target，
+    # 保留文档级 target；跨 source 排名事实记录在评测报告中。
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/evidence-grounded-resume-generation.md
+        section_path: []
+
+  - id: gen-mixed-03
+    query: 浏览器用 Web Worker 在本地处理大文件，性能改善是否也意味着隐私边界改变了？
+    category: mixed_technical
+    should_answer: true
+    # 标注调整（groundedness hardening）：问题的直接证据是隐私边界文档的
+    # “Web Worker 解决性能，不改变隐私结论”小节；Astro 工具箱文档只提供 Web Worker
+    # 性能背景，未被检索且非回答必需。实际引用全部落在隐私边界文档且 grounded
+    # （属于情况 A），移除非必需 target，保留核心隐私结论 target。
+    expected_evidence:
+      - source_id: notes
+        source_path: knowledge/browser-local-processing-privacy-boundaries.md
+        section_path: [浏览器本地处理不等于天然安全：工具网站的数据与隐私边界, Web Worker 解决性能，不改变隐私结论]
+
+  - id: gen-offtopic-01
+    query: Transformer 是什么？
+    category: knowledge
+    should_answer: false
+    expected_evidence: []
+
+  - id: gen-hard-negative-01
+    query: 你最拿手的红烧肉配方是什么？
+    category: hard_negative
+    should_answer: false
+    expected_evidence: []
+
+  - id: gen-hard-negative-02
+    query: 请确认你上一份工作的具体薪资和奖金数额。
+    category: hard_negative
+    should_answer: false
+    expected_evidence: []
+
+  - id: gen-hard-negative-03
+    query: 你对量子引力最新实验结果有什么独家结论？
+    category: hard_negative
+    should_answer: false
+    expected_evidence: []

@@ -207,21 +207,30 @@ Recall@20 保持 0.9255。Candidate 20 的 MRR 高于 10 和 30，但 CPU Rerank
 
 ## Phase 8 — 基于证据的回答生成
 
-目标：提供公网 `/ask` 接口。
+状态：实现与确定性验证已完成。真实 API smoke test 依赖本地 `.env` 的 LLM 配置；未配置
+时不阻塞代码验收，评测会明确报告未运行真实 generation。
+
+目标：提供核心问答闭环（公网 `/ask` API 留待后续阶段接入同一 service）。
 
 实现内容：
 
-- Context Builder；
+- Generation domain model：EvidenceItem、GeneratedAnswer、Citation mapping、GenerationResult；
+- ContextBuilder：短 Evidence ID、确定性预算截断、Prompt 注入边界；
 - 与证据分离的 Persona 规则；
-- LLM Provider Adapter；
-- 证据不足时的处理；
-- 来源引用。
+- OpenAI-compatible GenerationProvider（`.env` 配置，Key 不入日志）；
+- claim-level 结构化生成与确定性 CitationValidator；
+- 证据不足处理（检索为空 / 模型判定 / 校验无法安全恢复）；
+- 失败模型与最多 1 次语义修复重试；
+- generation CLI（ask，默认 vector，reranked 显式可选）；
+- 独立评测集 `evaluation/generation.yaml` 与确定性评测。
 
 验收标准：
 
 - 回答自然使用第一人称；
-- 事实性陈述基于选定 Chunk；
-- 未知问题不会触发虚构个人事实。
+- 事实性陈述基于选定 Chunk，引用可映射回 source_path / section_path；
+- 未知问题不会触发虚构个人事实；
+- private evidence 不进入 context；
+- 单元测试不调用真实 LLM。
 
 ## Phase 9 — Evaluation Harness
 

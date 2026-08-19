@@ -28,7 +28,7 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 
 ## 当前阶段
 
-当前进入 `Phase 7 - reranker evaluation and re-ranking`：
+当前进入 `Phase 8 - grounded generation and citation`：
 
 - 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
 - Git source 通过显式 `local_path` 和 include allowlist 获取文档；
@@ -58,6 +58,19 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
   Recall@1 从 0.5213 提升到 0.6809，MRR 从 0.6532 提升到 0.7753；
 - 质量收益明确，但重排 CPU 中位延迟约 1.74 秒、进程峰值 RSS 约 1.49 GB，因此生产默认
   仍为 `vector`，`reranked` 作为显式可选模式保留。
+- Phase 8 建立 Question → Retrieval → Evidence Context → External LLM → Grounded Answer
+  → Citation Validation 的确定性问答闭环；固定 workflow，不是 Agent loop；
+- 每次请求为 Evidence 分配短 ID（E1、E2…），LLM 只引用短 ID，系统校验后映射回
+  chunk_id / source_path / section_path；
+- 结构化生成采用 claim-level citation JSON；Citation 合法性、归属、覆盖率与
+  insufficient-evidence 规则全部由代码确定性校验，不依赖 Prompt 约束；
+- Context Budget 确定性截断：默认 top_k=5、最多 5 条 Evidence、6000 字符，只保留完整 chunk；
+- OpenAI-compatible `GenerationProvider` 通过 `.env` 配置 base_url / api_key / model，
+  Key 永不进入日志或诊断；语义修复重试最多 1 次；
+- 检索为空、模型判定不足或校验无法安全恢复时返回“当前公开知识库中没有足够信息回答这个问题”；
+- 独立评测集 `evaluation/generation.yaml`（22 条，含 3 条 hard negative）报告确定性
+  generation 指标；不修改 `evaluation/retrieval.yaml`。
+- 生产默认 Retriever 仍为 `vector`；`reranked` 仅在显式选择时加载。
 
 后续阶段：
 
@@ -76,9 +89,11 @@ v5  Production vector retriever
  ↓
 v6  Lexical + Hybrid retrieval
  ↓
-v7  CrossEncoder reranker evaluation（当前）
+v7  CrossEncoder reranker evaluation
  ↓
-v8  Grounded answer + citations
+v8  Grounded answer + citations（当前）
+ ↓
+v9  Evaluation harness / deployment
 ```
 
 ## 目录
@@ -92,12 +107,15 @@ zglab-rag/
 ├── .gitignore
 ├── config/
 │   ├── embedding-models.yaml
+│   ├── reranker-models.yaml
 │   └── sources.yaml
 ├── evaluation/
-│   └── retrieval.yaml
+│   ├── retrieval.yaml
+│   └── generation.yaml
 ├── docs/
 │   ├── architecture.md
-│   └── knowledge-model.md
+│   ├── knowledge-model.md
+│   └── generation-grounding.md
 ├── knowledge/
 │   └── identity/
 │       └── profile.md
@@ -267,6 +285,47 @@ baseline 为 20。指定模型的 471 MB 权重通过 Hugging Face 镜像下载�
 峰值 RSS 约 1.49 GB。质量验收通过，但当前 2C2G 生产预算偏紧，默认仍使用 Vector。
 完整指标、promotion/demotion、hard negatives、资源数据和 9 条人工 Query 记录见
 [`docs/evaluations/phase-7-reranker.md`](docs/evaluations/phase-7-reranker.md)。
+
+## Grounded Generation
+
+Phase 8 的问答闭环通过 generation CLI 使用，默认 retrieval mode 仍为 `vector`：
+
+```bash
+uv run python -m zglab_rag.generation.cli ask \
+  "Agent 长期记忆和 Context 有什么区别？"
+
+uv run python -m zglab_rag.generation.cli ask \
+  "你是谁？" --mode reranked --debug
+```
+
+LLM 通过 OpenAI-compatible endpoint 配置，真实 secret 只写在 Git ignored 的 `.env`：
+
+```bash
+ZGLAB_RAG_LLM_BASE_URL=https://...
+ZGLAB_RAG_LLM_API_KEY=...
+ZGLAB_RAG_LLM_MODEL=...
+```
+
+未配置时 CLI 输出 `Generation provider not configured`，不产生 stack trace。回答采用
+claim-level citation：LLM 只能引用本次分配的短 Evidence ID（E1、E2…），每个 claim 必须
+带有效 citation，cited evidence 集合由 validated claim citations 并集确定性生成；最终
+用户可见回答由 validated claims 确定性渲染，provider 的 free-form answer 只作内部
+信息，不能绕过校验。Citation 格式、归属、覆盖率与 insufficient-evidence 规则由确定性
+校验器检查；校验失败最多修复重试 1 次，仍失败则安全返回拒答文本。检索为空或模型判定
+证据不足时回答“当前公开知识库中没有足够信息回答这个问题”，不设置基于 score 的拒答
+阈值。完整设计（Persona 边界、Prompt 注入边界、失败模型）见
+[`docs/generation-grounding.md`](docs/generation-grounding.md)。
+
+Generation 评测使用独立数据集，不修改 retrieval 评测集：
+
+```bash
+uv run python -m zglab_rag.evaluation.generation
+uv run python -m zglab_rag.evaluation.generation --retrieval-only
+```
+
+确定性指标包括 retrieval evidence hit、citation validity、citation coverage、
+should-answer correctness 与 insufficient-evidence correctness；hard negative 记录检索
+证据、score、生成决定与引用。结果写入 Git ignored 的 `artifacts/evaluation/`。
 
 ## 安全边界
 

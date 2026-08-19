@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +37,24 @@ class Settings(BaseSettings):
     hybrid_lexical_weight: float = 1.0
     reranker_candidate_k: int = 20
     reranker_default_top_k: int = 5
+
+    llm_base_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("ZGLAB_RAG_LLM_BASE_URL", "LLM_BASE_URL")
+    )
+    llm_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("ZGLAB_RAG_LLM_API_KEY", "LLM_API_KEY")
+    )
+    llm_model: str | None = Field(
+        default=None, validation_alias=AliasChoices("ZGLAB_RAG_LLM_MODEL", "LLM_MODEL")
+    )
+    llm_timeout_seconds: float = 60.0
+    generation_retrieval_top_k: int = 5
+    generation_max_evidence_items: int = 5
+    generation_max_context_chars: int = 6000
+
+    @property
+    def llm_provider_configured(self) -> bool:
+        return bool(self.llm_base_url and self.llm_api_key and self.llm_model)
 
 
 def get_settings() -> Settings:
