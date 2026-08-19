@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     api_rate_limit_window_seconds: int = 60
     api_max_request_body_bytes: int = 16 * 1024  # 16 KiB
     api_cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8000", "http://127.0.0.1:8000"])
+    api_sse_heartbeat_seconds: float = 15.0
 
     @property
     def llm_provider_configured(self) -> bool:

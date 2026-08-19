@@ -10,6 +10,14 @@ Phase 9A implements:
 - GET /health (lightweight liveness)
 - GET /sources (public source metadata, sanitized)
 
+Phase 9B adds:
+- POST /api/v1/ask/stream (status SSE, not raw token streaming)
+
+Both ask endpoints share one request lifecycle: the same schema validation,
+rate limit, concurrency guard, timeout and public-only security invariant.
+The final answer is only ever sent after structured generation, citation
+validation and deterministic rendering.
+
 Security boundaries:
 - Public-only retrieval (visibility=public is enforced server-side)
 - No client control over retrieval_mode, top_k, visibility
@@ -19,10 +27,12 @@ Security boundaries:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import queue
 import uuid
 from collections.abc import AsyncIterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING, Protocol
@@ -33,7 +43,7 @@ if TYPE_CHECKING:
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
 from zglab_rag import __version__
@@ -46,10 +56,18 @@ from zglab_rag.api.contracts import (
     PublicErrorResponse,
     PublicSource,
     PublicStatus,
+    PublicStreamStage,
+    PublicStreamStatus,
 )
 from zglab_rag.api.rate_limit import RateLimiter, RateLimitExceededError
+from zglab_rag.api.sse import SSE_HEADERS, SSE_HEARTBEAT, encode_sse_event
 from zglab_rag.config import Settings, get_settings
-from zglab_rag.generation.contracts import GenerationResult, GenerationStatus
+from zglab_rag.generation.contracts import (
+    GenerationResult,
+    GenerationStatus,
+    ProgressCallback,
+    ProgressStage,
+)
 from zglab_rag.generation.errors import GenerationError, ProviderFailure
 from zglab_rag.sources.registry import SourceRegistry
 
@@ -57,9 +75,15 @@ logger = logging.getLogger(__name__)
 
 
 class AnswerService(Protocol):
-    """Protocol for the answer service (real or fake)."""
+    """Protocol for the answer service (real or fake).
 
-    def answer(self, question: str) -> GenerationResult: ...
+    The optional progress observer is only consumed by the SSE endpoint;
+    it reports abstract stages and never carries evidence content.
+    """
+
+    def answer(
+        self, question: str, *, progress: ProgressCallback | None = None
+    ) -> GenerationResult: ...
 
 
 class ApplicationRuntime(Protocol):
@@ -146,8 +170,11 @@ def create_app(
     # Request body size limit middleware
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
-        # Only apply to POST /api/v1/ask
-        if request.method == "POST" and request.url.path == "/api/v1/ask":
+        # Only apply to the public ask endpoints
+        if request.method == "POST" and request.url.path in (
+            "/api/v1/ask",
+            "/api/v1/ask/stream",
+        ):
             content_length = request.headers.get("content-length")
             if content_length and int(content_length) > settings.api_max_request_body_bytes:
                 request_id = str(uuid.uuid4())
@@ -232,48 +259,13 @@ def create_app(
         guard: ConcurrencyGuard = app.state.concurrency_guard
         limiter: RateLimiter = app.state.rate_limiter
 
-        # Validate question length
-        question = body.question.strip()
-        if len(question) < settings.api_question_min_length:
-            return _error_response(
-                request_id,
-                PublicErrorCode.INVALID_REQUEST,
-                "Question is too short",
-                status_code=400,
-            )
-        if len(question) > settings.api_question_max_length:
-            return _error_response(
-                request_id,
-                PublicErrorCode.INVALID_REQUEST,
-                f"Question exceeds maximum length of {settings.api_question_max_length} characters",
-                status_code=400,
-            )
-
-        # Rate limit check
-        client_id = _get_client_id(request)
-        try:
-            limiter.check(client_id)
-        except RateLimitExceededError as exc:
-            logger.warning("Rate limit exceeded for client %s", client_id)
-            return _error_response(
-                request_id,
-                PublicErrorCode.RATE_LIMITED,
-                "Rate limit exceeded; please retry later",
-                status_code=429,
-                retry_after=exc.retry_after_seconds,
-            )
-
-        # Concurrency guard
-        try:
-            guard.acquire()
-        except ServiceBusyError:
-            logger.warning("Service busy: all concurrent request slots occupied")
-            return _error_response(
-                request_id,
-                PublicErrorCode.SERVICE_BUSY,
-                "Service is busy; please retry later",
-                status_code=503,
-            )
+        # Shared request lifecycle with /api/v1/ask/stream: question length,
+        # rate limit and concurrency acquire are identical for both endpoints.
+        question, preflight_error = _preflight_controls(
+            request, body.question, request_id, settings, limiter, guard
+        )
+        if preflight_error is not None:
+            return preflight_error
 
         executor: ThreadPoolExecutor = app.state.executor
         try:
@@ -344,6 +336,77 @@ def create_app(
         )
         return response
 
+    @app.post("/api/v1/ask/stream")
+    async def ask_stream(
+        request: Request, body: PublicAskRequest
+    ) -> Response:
+        """Public status-SSE ask endpoint.
+
+        This is status streaming, not raw token streaming: the final answer
+        is sent only once, inside the `completed` event, after structured
+        generation, citation validation and deterministic rendering.
+
+        Pre-stream failures (INVALID_REQUEST / RATE_LIMITED / SERVICE_BUSY)
+        are returned as plain Phase 9A JSON errors before the event stream
+        opens. Post-stream failures (GENERATION_TIMEOUT /
+        PROVIDER_UNAVAILABLE / INTERNAL_ERROR) are emitted as SSE `error`
+        events.
+        """
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        settings = app.state.settings
+        runtime = app.state.runtime
+        guard: ConcurrencyGuard = app.state.concurrency_guard
+        limiter: RateLimiter = app.state.rate_limiter
+
+        # Identical pre-stream lifecycle as /api/v1/ask. Reject with plain
+        # JSON errors before opening the event stream.
+        question, preflight_error = _preflight_controls(
+            request, body.question, request_id, settings, limiter, guard
+        )
+        if preflight_error is not None:
+            return preflight_error
+
+        # Thread -> async bridge. asyncio.Queue is not thread-safe, so the
+        # worker thread only touches a stdlib SimpleQueue and wakes the event
+        # loop via loop.call_soon_threadsafe.
+        loop = asyncio.get_running_loop()
+        bridge: queue.SimpleQueue[ProgressStage | object] = queue.SimpleQueue()
+        done_sentinel = object()
+
+        def _progress(stage: ProgressStage) -> None:
+            # Runs in the generation worker thread.
+            loop.call_soon_threadsafe(bridge.put_nowait, stage)
+
+        def _on_done(_future: Future) -> None:
+            # Runs in the worker thread when the task really completes.
+            loop.call_soon_threadsafe(bridge.put_nowait, done_sentinel)
+
+        executor: ThreadPoolExecutor = app.state.executor
+        try:
+            future = executor.submit(_execute_generation, runtime, question, _progress)
+        except RuntimeError:
+            # Executor was shut down (graceful shutdown in progress).
+            guard.release()
+            return _error_response(
+                request_id,
+                PublicErrorCode.SERVICE_BUSY,
+                "Service is shutting down; please retry later",
+                status_code=503,
+            )
+        # Slot ownership invariant (frozen in Phase 9A): the slot belongs to
+        # the generation task, not to the SSE connection. Client disconnect
+        # or API timeout never releases it early; only the done callback
+        # does. HTTP disconnect != generation cancellation.
+        future.add_done_callback(lambda _future: guard.release())
+        future.add_done_callback(_on_done)
+
+        return StreamingResponse(
+            _stream_events(request, future, bridge, done_sentinel, request_id, settings),
+            media_type="text/event-stream",
+            headers=SSE_HEADERS,
+        )
+
     return app
 
 
@@ -358,10 +421,77 @@ def _get_client_id(request: Request) -> str:
     return "unknown"
 
 
-def _execute_generation(runtime: ApplicationRuntime | None, question: str) -> GenerationResult:
+def _preflight_controls(
+    request: Request,
+    raw_question: str,
+    request_id: str,
+    settings: Settings,
+    limiter: RateLimiter,
+    guard: ConcurrencyGuard,
+) -> tuple[str, JSONResponse | None]:
+    """Shared request lifecycle for /api/v1/ask and /api/v1/ask/stream.
+
+    Runs question length validation, rate limit check and concurrency
+    acquire. Both endpoints enforce exactly the same public security
+    boundary through this single implementation, so SSE never becomes a
+    bypass.
+
+    Returns the normalized question and, when the request must be rejected
+    before any generation work starts, the public JSON error response (the
+    concurrency slot was not acquired in that case).
+    """
+    question = raw_question.strip()
+    if len(question) < settings.api_question_min_length:
+        return question, _error_response(
+            request_id,
+            PublicErrorCode.INVALID_REQUEST,
+            "Question is too short",
+            status_code=400,
+        )
+    if len(question) > settings.api_question_max_length:
+        return question, _error_response(
+            request_id,
+            PublicErrorCode.INVALID_REQUEST,
+            f"Question exceeds maximum length of {settings.api_question_max_length} characters",
+            status_code=400,
+        )
+
+    client_id = _get_client_id(request)
+    try:
+        limiter.check(client_id)
+    except RateLimitExceededError as exc:
+        logger.warning("Rate limit exceeded for client %s", client_id)
+        return question, _error_response(
+            request_id,
+            PublicErrorCode.RATE_LIMITED,
+            "Rate limit exceeded; please retry later",
+            status_code=429,
+            retry_after=exc.retry_after_seconds,
+        )
+
+    try:
+        guard.acquire()
+    except ServiceBusyError:
+        logger.warning("Service busy: all concurrent request slots occupied")
+        return question, _error_response(
+            request_id,
+            PublicErrorCode.SERVICE_BUSY,
+            "Service is busy; please retry later",
+            status_code=503,
+        )
+    return question, None
+
+
+def _execute_generation(
+    runtime: ApplicationRuntime | None,
+    question: str,
+    progress: ProgressCallback | None = None,
+) -> GenerationResult:
     """Execute the blocking generation call.
 
-    This function runs in a thread pool to avoid blocking the async event loop.
+    This function runs in a thread pool to avoid blocking the async event
+    loop. The optional progress observer is forwarded to the service; the
+    non-stream endpoint always passes None.
     """
     # If no runtime was injected, use the lazy production runtime
     if runtime is None:
@@ -369,7 +499,155 @@ def _execute_generation(runtime: ApplicationRuntime | None, question: str) -> Ge
 
     with runtime.request_connection() as connection:
         service = runtime.create_service(connection)
-        return service.answer(question)
+        return service.answer(question, progress=progress)
+
+
+async def _stream_events(
+    request: Request,
+    future: Future,
+    bridge: queue.SimpleQueue,
+    done_sentinel: object,
+    request_id: str,
+    settings: Settings,
+) -> AsyncIterator[str]:
+    """Yield public SSE events for one generation request.
+
+    Contract:
+    - Stage events are narrow `{request_id, stage}`: no evidence content,
+      raw LLM text, scores, provider details, token usage or diagnostics.
+    - The final validated answer is emitted exactly once, inside
+      `completed`, after structured generation + citation validation +
+      deterministic rendering.
+    - On the API deadline: emit an `error` event (GENERATION_TIMEOUT) and
+      close. The background task keeps its concurrency slot until it
+      really finishes — timeout never releases the slot.
+    - On client disconnect: stop writing silently (no traceback, no error
+      leak, no early slot release, no new generation work). HTTP
+      disconnect != generation cancellation; cooperative cancellation is
+      Post-v1.
+    - Heartbeats are SSE comments (`: keep-alive`) only; they never fake
+      a processing stage.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + settings.api_request_timeout_seconds
+    next_heartbeat = loop.time() + settings.api_sse_heartbeat_seconds
+
+    yield encode_sse_event(
+        PublicStreamStage.ACCEPTED.value,
+        PublicStreamStatus(request_id=request_id, stage=PublicStreamStage.ACCEPTED),
+    )
+
+    async def _next_item() -> ProgressStage | object:
+        while True:
+            try:
+                return bridge.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+
+    while True:
+        now = loop.time()
+        if now >= deadline:
+            logger.warning("Generation timeout for stream request %s", request_id)
+            yield _sse_error_event(
+                request_id,
+                PublicErrorCode.GENERATION_TIMEOUT,
+                "Request timed out; please retry later",
+            )
+            return
+        if await request.is_disconnected():
+            # Client went away: stop writing events. The generation task
+            # continues in the background and releases its own slot when
+            # the Future really completes.
+            return
+        wait_seconds = min(next_heartbeat, deadline) - now
+        try:
+            item = await asyncio.wait_for(_next_item(), timeout=wait_seconds)
+        except TimeoutError:
+            if loop.time() >= next_heartbeat:
+                yield SSE_HEARTBEAT
+                next_heartbeat = loop.time() + settings.api_sse_heartbeat_seconds
+            continue
+        if item is done_sentinel:
+            break
+        stage = PublicStreamStage(item.value)  # type: ignore[union-attr]
+        yield encode_sse_event(
+            stage.value,
+            PublicStreamStatus(request_id=request_id, stage=stage),
+        )
+
+    # The task really completed. Map the safe result to the terminal event.
+    exc = future.exception()
+    if exc is not None:
+        if isinstance(exc, ProviderFailure):
+            logger.warning("Provider failure for stream request %s: %s", request_id, exc)
+            yield _sse_error_event(
+                request_id,
+                PublicErrorCode.PROVIDER_UNAVAILABLE,
+                "Answer service is temporarily unavailable",
+            )
+        elif isinstance(exc, GenerationError):
+            logger.warning("Generation error for stream request %s: %s", request_id, exc)
+            yield _sse_error_event(
+                request_id,
+                PublicErrorCode.INTERNAL_ERROR,
+                "An error occurred while generating the answer",
+            )
+        else:
+            logger.exception("Unexpected error in stream request %s", request_id)
+            yield _sse_error_event(
+                request_id,
+                PublicErrorCode.INTERNAL_ERROR,
+                "An unexpected error occurred",
+            )
+        return
+
+    try:
+        completed = _map_result_to_response(future.result(), request_id)
+    except ProviderFailure as exc:
+        logger.warning("Provider failure for stream request %s: %s", request_id, exc)
+        yield _sse_error_event(
+            request_id,
+            PublicErrorCode.PROVIDER_UNAVAILABLE,
+            "Answer service is temporarily unavailable",
+        )
+        return
+    except GenerationError as exc:
+        logger.warning("Generation error for stream request %s: %s", request_id, exc)
+        yield _sse_error_event(
+            request_id,
+            PublicErrorCode.INTERNAL_ERROR,
+            "An error occurred while generating the answer",
+        )
+        return
+    except Exception:
+        logger.exception("Unexpected error in stream request %s", request_id)
+        yield _sse_error_event(
+            request_id,
+            PublicErrorCode.INTERNAL_ERROR,
+            "An unexpected error occurred",
+        )
+        return
+
+    yield encode_sse_event(PublicStreamStage.COMPLETED.value, completed)
+    logger.info(
+        "request_id=%s path=/api/v1/ask/stream status=%s",
+        request_id,
+        completed.status,
+    )
+
+
+def _sse_error_event(request_id: str, code: PublicErrorCode, message: str) -> str:
+    """Encode a terminal SSE error event reusing the Phase 9A envelope.
+
+    Never includes failure_reason, exception names or tracebacks.
+    """
+    return encode_sse_event(
+        "error",
+        PublicErrorResponse(
+            request_id=request_id,
+            error=PublicErrorDetail(code=code, message=message),
+        ),
+    )
 
 
 def _map_result_to_response(result: GenerationResult, request_id: str) -> PublicAskResponse:

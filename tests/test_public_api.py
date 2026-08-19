@@ -52,7 +52,7 @@ class FakeAnswerService:
         self.call_count = 0
         self.last_question: str | None = None
 
-    def answer(self, question: str) -> GenerationResult:
+    def answer(self, question: str, *, progress=None) -> GenerationResult:
         self.call_count += 1
         self.last_question = question
         if self.delay > 0:
@@ -118,7 +118,7 @@ class BlockingAnswerService:
         self.started_event = started_event
         self.finished_event = finished_event
 
-    def answer(self, question: str) -> GenerationResult:
+    def answer(self, question: str, *, progress=None) -> GenerationResult:
         self.started_event.set()
         # Bounded wait so a test failure cannot hang the worker forever.
         self.block_event.wait(timeout=15.0)

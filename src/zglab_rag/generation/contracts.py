@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import StrEnum
 from typing import Protocol
 
@@ -13,6 +14,22 @@ class GenerationStatus(StrEnum):
     ANSWERED = "answered"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
     FAILED = "failed"
+
+
+class ProgressStage(StrEnum):
+    """Execution stages reported by the optional progress observer.
+
+    Stages only name the current phase; they never carry evidence content,
+    provider details or diagnostics. The generation domain knows nothing
+    about SSE/FastAPI/asyncio: consumers receive a plain abstract callback.
+    """
+
+    RETRIEVING = "retrieving"
+    GENERATING = "generating"
+    VALIDATING = "validating"
+
+
+ProgressCallback = Callable[[ProgressStage], None]
 
 
 class EvidenceItem(BaseModel):

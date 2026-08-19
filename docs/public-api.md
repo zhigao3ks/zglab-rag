@@ -116,6 +116,87 @@ Insufficient evidence:
 | 504 | GENERATION_TIMEOUT | 请求超时 |
 | 500 | INTERNAL_ERROR | 未预期的内部错误 |
 
+### POST /api/v1/ask/stream（Phase 9B）
+
+状态 SSE 端点。**这不是 raw token streaming**：最终 answer 仍必须经过
+structured generation → CitationValidator → deterministic rendering 之后，才在
+`completed` 事件中一次性发送。
+
+Request schema 与 `/api/v1/ask` 完全相同（`{"question": "..."}`，extra fields
+拒绝），并共用同一套 question 长度、rate limit、concurrency、timeout 与
+public-only 安全边界（单一 `_preflight_controls` 实现，SSE 不是旁路）。
+
+**Response headers**：
+
+```text
+Content-Type: text/event-stream
+Cache-Control: no-cache
+X-Accel-Buffering: no        # 为 Phase 10 Nginx 反代准备
+```
+
+**事件模型**：
+
+```text
+accepted → retrieving → generating → validating → completed
+                                                  ↘ error（可终止于任何阶段后）
+```
+
+| event | data | 含义 |
+|-------|------|------|
+| accepted | `{request_id, stage}` | 请求已接受，进入生命周期 |
+| retrieving | `{request_id, stage}` | 开始检索 |
+| generating | `{request_id, stage}` | Context 已建立，调用 LLM |
+| validating | `{request_id, stage}` | 开始 parse / citation 校验 |
+| completed | Phase 9A `PublicAskResponse` | 唯一的最终 answer 载体 |
+| error | Phase 9A `PublicErrorResponse` | 流建立后的终止性错误 |
+
+阶段事件只携带 `request_id` + `stage`，**不得包含**：evidence content、raw LLM
+answer、未验证文本、provider/model、scores、token usage、diagnostics、private
+metadata。所有事件的 `request_id` 一致。repair retry 会真实产生额外的
+`generating → validating` 对，但有界（最多 1 次修复）。
+
+**SSE 格式与编码**：每个事件为标准 SSE（`event:` + `data:` + 空行），data 为
+JSON（`ensure_ascii=True`、sorted keys）。用户文本先经 JSON 编码，转义后的
+负载不可能注入新的 SSE 事件行。heartbeat 是 SSE comment（`: keep-alive`），
+不伪造任何 stage。
+
+**错误边界（pre-stream vs post-stream）**：
+
+| 错误 | 判定时机 | 形式 |
+|------|----------|------|
+| INVALID_REQUEST（schema/长度/body） | SSE 建立前 | 普通 JSON（400/413/422） |
+| RATE_LIMITED | SSE 建立前 | 普通 JSON（429，一次 SSE 请求只计一次限流） |
+| SERVICE_BUSY | SSE 建立前 | 普通 JSON（503） |
+| GENERATION_TIMEOUT | 流建立后超过 API deadline | `event: error`（504 语义） |
+| PROVIDER_UNAVAILABLE | 流建立后 provider 失败 | `event: error`（503 语义） |
+| INTERNAL_ERROR | 流建立后其他失败 | `event: error`（500 语义） |
+
+`error` 事件不携带 failure_reason、异常类名或 traceback。
+
+**Timeout / 后台 worker / disconnect 语义**：
+
+- SSE 请求沿用 `api_request_timeout_seconds`；超过 deadline 发送
+  `GENERATION_TIMEOUT` error 事件后关闭流；
+- 后台 generation 若仍在运行，concurrency slot 继续占用直到 Future 真正完成
+  （slot 生命周期 = task 生命周期，Phase 9A 冻结不变量在 SSE 上同样成立）；
+- 客户端断开：停止写事件、不记录 traceback、不提前释放 slot、不启动新的
+  generation 工作；已在运行的同步 provider 调用允许自然结束；
+- **HTTP disconnect ≠ generation cancellation guarantee**；真正的 cooperative
+  cancellation 留到 Post-v1。
+
+**Thread → Async bridge**：generation 仍在 app-scoped ThreadPoolExecutor 中同步
+执行；worker 线程只写 stdlib `SimpleQueue`，通过 `loop.call_soon_threadsafe`
+唤醒 event loop，再由 async 生成器输出 `StreamingResponse`。不使用非线程安全
+的 `asyncio.Queue`，也不为 SSE 把 Phase 8 provider 改写为 async。
+
+**Progress observer**：`GroundedAnswerService.answer(..., progress=callback)`
+接受可选的阶段回调（`retrieving` / `generating` / `validating`）。默认 None；
+CLI 与 evaluation 不传；回调只报告阶段、不携带 evidence 内容；回调异常不会破坏
+generation workflow。generation 层不认识 SSE/FastAPI/asyncio 类型。
+
+**Heartbeat**：`api_sse_heartbeat_seconds`（默认 15s）发送 `: keep-alive`
+comment，应对 20~40s 的真实 LLM generation；测试使用极短 fake interval。
+
 ## 安全边界
 
 ### Public-only 不变量
@@ -233,6 +314,8 @@ ZGLAB_RAG_API_RATE_LIMIT_REQUESTS=10
 ZGLAB_RAG_API_RATE_LIMIT_WINDOW_SECONDS=60
 ZGLAB_RAG_API_MAX_REQUEST_BODY_BYTES=16384
 ZGLAB_RAG_API_CORS_ORIGINS='["http://localhost:8000"]'
+# Phase 9B: SSE heartbeat interval
+ZGLAB_RAG_API_SSE_HEARTBEAT_SECONDS=15
 ```
 
 ## 日志
@@ -309,13 +392,30 @@ Hardening 补充（确定性，不依赖长时间真实 sleep，使用 `threadin
 38. FAILED 结果中的 ProviderFailure → 503 PROVIDER_UNAVAILABLE（不是 INTERNAL_ERROR）
 39. 非 Provider 的 workflow 失败 → 500 INTERNAL_ERROR
 
+Phase 9B SSE 覆盖（`tests/test_public_sse.py`，均为确定性测试，无长时间 sleep）：
+
+40. encode_sse_event 格式 / UTF-8 中文往返 / 注入防护 / heartbeat comment
+41. stream Content-Type、Cache-Control、X-Accel-Buffering headers
+42. 事件顺序确定性：accepted → retrieving → generating → validating → completed
+43. completed 携带 public answer/sources；阶段事件窄负载（无 diagnostics/score/
+    model/provider）；raw answer 永不流出
+44. insufficient_evidence completed；request_id 全事件一致、跨请求唯一
+45. pre-stream 错误为普通 JSON（422/400/429/503），不开流
+46. post-stream 错误为 SSE error event（PROVIDER_UNAVAILABLE / GENERATION_TIMEOUT），
+    不泄露 secret/异常名/traceback
+47. timeout 后 slot 仍占用直到 task 真正完成；disconnect 不提前释放 slot，
+    断开后不再写 completed（含 generator 单测）
+48. heartbeat 真实发出且不伪造 stage；progress 回调异常不破坏 generation；
+    repair 阶段序列有界；lifespan shutdown 后新任务安全拒绝；public-only 不变量
+
 ## 架构
 
 ```
 src/zglab_rag/
 ├── api/
-│   ├── main.py           # FastAPI app factory + endpoints
-│   ├── contracts.py      # Public request/response models
+│   ├── main.py           # FastAPI app factory + endpoints（/ask、/ask/stream 共用 lifecycle）
+│   ├── contracts.py      # Public request/response + SSE stream models
+│   ├── sse.py            # encode_sse_event + SSE headers/heartbeat
 │   ├── concurrency.py    # ConcurrencyGuard
 │   ├── rate_limit.py     # RateLimiter
 │   └── runtime.py        # ProductionRuntime

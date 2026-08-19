@@ -526,7 +526,10 @@ Phase 9 状态：**总体进行中**
 - 9A Public API Contract + Security Boundary = 完成（`POST /api/v1/ask`、窄公网契约、
   统一错误 envelope、并发/速率/请求体限制、CORS、slot 所有权与两层 deadline 语义，
   见 `docs/public-api.md`）
-- 9B Streaming / SSE = 未开始
+- 9B Status SSE + Request Lifecycle = 完成（`POST /api/v1/ask/stream`：status
+  streaming 而非 raw token streaming，最终 answer 仍经 structured generation →
+  CitationValidator → deterministic rendering 后一次性发送；与 /ask 共用同一
+  request lifecycle 与 slot 所有权不变量）
 - 9C Web Assistant UI = 未开始
 - 9D Integration Acceptance = 未开始
 

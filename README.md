@@ -85,6 +85,20 @@ Phase 9A 实现公网 API 契约与安全边界：
 - CLI 与 HTTP API 共用 `application/runtime.py` 中的 factory，避免配置漂移；
 - 完整设计见 [`docs/public-api.md`](docs/public-api.md)。
 
+Phase 9B 新增状态 SSE（不是 raw token streaming）：
+
+- `POST /api/v1/ask/stream` 返回 `text/event-stream`，事件序列
+  `accepted → retrieving → generating → validating → completed`；
+- 最终 answer 仍经 structured generation → CitationValidator → deterministic
+  rendering 后在 `completed` 中一次性发送；阶段事件只携带 request_id + stage；
+- 与 `/api/v1/ask` 共用同一 request lifecycle（schema/限流/并发/timeout/
+  public-only）；pre-stream 错误返回普通 JSON，post-stream 错误以 SSE error
+  事件终止；
+- heartbeat（`: keep-alive`，默认 15s）不伪造 stage；客户端断开不提前释放
+  concurrency slot（slot 生命周期 = generation task 生命周期）；
+- thread → async bridge 使用 stdlib SimpleQueue + `loop.call_soon_threadsafe`，
+  不改变 Phase 8 同步 provider。
+
 后续阶段：
 
 ```text

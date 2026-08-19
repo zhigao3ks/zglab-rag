@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from time import perf_counter
 from typing import Literal
 
@@ -20,6 +20,8 @@ from zglab_rag.generation.contracts import (
     GenerationResult,
     GenerationStatus,
     GroundedAnswer,
+    ProgressCallback,
+    ProgressStage,
     ProviderResponse,
     Retriever,
 )
@@ -53,6 +55,24 @@ def render_claims_answer(claims: Sequence[GeneratedClaim]) -> str:
     return "\n".join(claim.text for claim in claims)
 
 
+def _safe_progress(progress: ProgressCallback | None) -> Callable[[ProgressStage], None]:
+    """Wrap the optional progress observer.
+
+    The observer is best-effort: any exception it raises is swallowed so that
+    progress reporting can never change or break the generation workflow.
+    """
+    if progress is None:
+        return lambda _stage: None
+
+    def notify(stage: ProgressStage) -> None:
+        try:
+            progress(stage)
+        except Exception:
+            pass
+
+    return notify
+
+
 class GroundedAnswerService:
     """Deterministic Question → Retrieval → Context → Provider → Validation workflow.
 
@@ -80,11 +100,14 @@ class GroundedAnswerService:
         *,
         retrieval_mode: RetrievalMode | None = None,
         top_k: int | None = None,
+        progress: ProgressCallback | None = None,
     ) -> GenerationResult:
         mode = retrieval_mode or self.config.retrieval_mode
         retrieval_top_k = top_k or self.config.retrieval_top_k
+        notify = _safe_progress(progress)
         started = perf_counter()
 
+        notify(ProgressStage.RETRIEVING)
         retrieval_started = perf_counter()
         try:
             response = self.retriever.retrieve(
@@ -127,6 +150,7 @@ class GroundedAnswerService:
         generated: GeneratedAnswer | None = None
         validation: CitationValidation | None = None
         for attempt in range(self.config.max_repair_attempts + 1):
+            notify(ProgressStage.GENERATING)
             try:
                 last_response = self.provider.generate(request)
             except ProviderFailure as exc:
@@ -143,6 +167,7 @@ class GroundedAnswerService:
                     failure_reason=f"ProviderFailure: {exc}",
                 )
             generation_ms += last_response.latency_ms
+            notify(ProgressStage.VALIDATING)
             try:
                 generated = parse_structured_answer(last_response.text)
                 validation = validate_generated_answer(generated, context.evidence)

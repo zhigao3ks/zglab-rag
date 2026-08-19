@@ -88,3 +88,40 @@ class PublicErrorResponse(BaseModel):
 
     request_id: str
     error: PublicErrorDetail
+
+
+# ---------------------------------------------------------------------------
+# Phase 9B: SSE stream contracts
+# ---------------------------------------------------------------------------
+
+
+class PublicStreamStage(StrEnum):
+    """Public lifecycle stages emitted as SSE status events.
+
+    Only `completed` may carry the final validated answer; stage events
+    carry nothing but request_id and the stage name.
+    """
+
+    ACCEPTED = "accepted"
+    RETRIEVING = "retrieving"
+    GENERATING = "generating"
+    VALIDATING = "validating"
+    COMPLETED = "completed"
+
+
+class PublicStreamStatus(BaseModel):
+    """Narrow SSE status event payload (accepted/retrieving/generating/validating).
+
+    Intentionally contains no evidence content, scores, provider details,
+    token usage or diagnostics.
+    """
+
+    request_id: str
+    stage: PublicStreamStage
+
+
+# completed reuses the Phase 9A public response; SSE error reuses the
+# Phase 9A public error envelope. Aliases keep the stream contract explicit
+# without duplicating schema definitions.
+PublicStreamCompleted = PublicAskResponse
+PublicStreamError = PublicErrorResponse
