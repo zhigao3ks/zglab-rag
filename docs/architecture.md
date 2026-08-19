@@ -521,6 +521,15 @@ Generation evaluation 包括：
 
 ## 16. Phase 9 — Public Assistant Product Layer 架构方向
 
+Phase 9 状态：**总体进行中**
+
+- 9A Public API Contract + Security Boundary = 完成（`POST /api/v1/ask`、窄公网契约、
+  统一错误 envelope、并发/速率/请求体限制、CORS、slot 所有权与两层 deadline 语义，
+  见 `docs/public-api.md`）
+- 9B Streaming / SSE = 未开始
+- 9C Web Assistant UI = 未开始
+- 9D Integration Acceptance = 未开始
+
 Phase 9 把 Phase 8 的 `GroundedAnswerService` 包装为公网产品层。核心架构边界：
 
 ```text

@@ -234,7 +234,12 @@ Recall@20 保持 0.9255。Candidate 20 的 MRR 高于 10 和 30，但 CPU Rerank
 
 ## Phase 9 — Public Assistant Product Layer
 
-状态：待实现。
+状态：**总体进行中**
+
+- 9A Public API Contract + Security Boundary = 完成
+- 9B Streaming / SSE = 未开始
+- 9C Web Assistant UI = 未开始
+- 9D Integration Acceptance = 未开始
 
 核心目标：把 Phase 8 验证完成的 `GroundedAnswerService` 包装成公网访客可用的产品层。
 

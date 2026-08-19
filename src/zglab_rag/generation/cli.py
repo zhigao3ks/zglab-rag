@@ -4,22 +4,16 @@ import argparse
 import sys
 from pathlib import Path
 
-from zglab_rag.config import Settings, get_settings
-from zglab_rag.embeddings.sentence_transformer import SentenceTransformerEmbeddingProvider
+from zglab_rag.application.runtime import (
+    build_embedding_components,
+    build_generation_retriever,
+    build_llm_provider,
+)
+from zglab_rag.config import get_settings
 from zglab_rag.generation.context import ContextBudget
 from zglab_rag.generation.contracts import GenerationResult, GenerationStatus
 from zglab_rag.generation.errors import GenerationError
-from zglab_rag.generation.openai_provider import (
-    OpenAICompatibleConfig,
-    OpenAICompatibleProvider,
-)
 from zglab_rag.generation.service import GroundedAnswerService, GroundedGenerationConfig
-from zglab_rag.indexing.profile import load_active_embedding_profile
-from zglab_rag.reranking.config import RerankerModelRegistry
-from zglab_rag.reranking.cross_encoder import CrossEncoderRerankerProvider
-from zglab_rag.reranking.service import RerankedRetriever, RerankerRetrievalConfig
-from zglab_rag.retrieval.cli import retrieval_config
-from zglab_rag.retrieval.vector import VectorRetriever
 from zglab_rag.storage.database import Database
 
 
@@ -45,65 +39,6 @@ def _parser() -> argparse.ArgumentParser:
     ask.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     ask.add_argument("--batch-size", type=int, default=32)
     return parser
-
-
-def build_generation_retriever(
-    mode: str,
-    *,
-    connection,
-    settings: Settings,
-    models_config: Path,
-    device: str = "cpu",
-    batch_size: int = 32,
-    candidate_k: int | None = None,
-    reranker_models_config: Path = Path("config/reranker-models.yaml"),
-    reranker_model: str = "mmarco-mMiniLMv2-L12-H384-v1",
-    reranker_model_path: Path | None = None,
-):
-    profile, model_config = load_active_embedding_profile(models_config)
-    provider = SentenceTransformerEmbeddingProvider(
-        model_config,
-        device=device,
-        batch_size=batch_size,
-    )
-    vector = VectorRetriever(
-        connection,
-        provider,
-        profile,
-        model_config=model_config,
-        config=retrieval_config(settings),
-    )
-    if mode == "vector":
-        return vector
-    candidate_k = candidate_k or settings.reranker_candidate_k
-    reranker_model_config = RerankerModelRegistry.from_yaml(reranker_models_config).get_enabled(
-        reranker_model
-    )
-    reranker_provider = CrossEncoderRerankerProvider(
-        reranker_model_config,
-        device=device,
-        model_path=reranker_model_path,
-    )
-    return RerankedRetriever(
-        vector,
-        reranker_provider,
-        config=RerankerRetrievalConfig(
-            default_top_k=min(settings.generation_retrieval_top_k, candidate_k),
-            maximum_top_k=candidate_k,
-            candidate_k=candidate_k,
-        ),
-    )
-
-
-def build_llm_provider(settings: Settings) -> OpenAICompatibleProvider:
-    return OpenAICompatibleProvider(
-        OpenAICompatibleConfig(
-            base_url=settings.llm_base_url or "",
-            api_key=settings.llm_api_key or "",
-            model=settings.llm_model or "",
-            timeout_seconds=settings.llm_timeout_seconds,
-        )
-    )
 
 
 def _print_result(result: GenerationResult, *, debug: bool) -> None:
@@ -168,17 +103,22 @@ def main(argv: list[str] | None = None) -> int:
     connection = None
     try:
         connection = database.connect(read_only=True, initialize=False)
+        # Use shared factory from application.runtime
+        embedding_components = build_embedding_components(
+            args.models_config,
+            device=args.device,
+            batch_size=args.batch_size,
+        )
         retriever = build_generation_retriever(
             args.mode,
             connection=connection,
             settings=settings,
-            models_config=args.models_config,
-            device=args.device,
-            batch_size=args.batch_size,
+            embedding_components=embedding_components,
             candidate_k=args.candidate_k,
             reranker_models_config=args.reranker_models_config,
             reranker_model=args.reranker_model,
             reranker_model_path=args.reranker_model_path,
+            device=args.device,
         )
         service = GroundedAnswerService(
             retriever,

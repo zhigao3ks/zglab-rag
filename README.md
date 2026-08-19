@@ -72,6 +72,19 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
   generation 指标；不修改 `evaluation/retrieval.yaml`。
 - 生产默认 Retriever 仍为 `vector`；`reranked` 仅在显式选择时加载。
 
+Phase 9A 实现公网 API 契约与安全边界：
+
+- `POST /api/v1/ask` 窄公网接口，只接受 `question`，服务端强制 `visibility=public`；
+- Public response 只包含 `request_id` / `status` / `answer` / `sources`，不泄露 chunk_id、
+  score、provider、diagnostics 等内部信息；
+- 统一错误 envelope（`INVALID_REQUEST` / `RATE_LIMITED` / `SERVICE_BUSY` /
+  `GENERATION_TIMEOUT` / `PROVIDER_UNAVAILABLE` / `INTERNAL_ERROR`），不暴露 traceback；
+- 进程内 Concurrency Guard（默认 1 并发）和 Rate Limiter（默认 10 req/min）防止过载；
+- Request body limit（16 KiB）、question length limit（1-1000 字符）、CORS allowlist；
+- 应用启动加载 BGE 模型，请求级别 SQLite connection，避免每请求重新加载模型；
+- CLI 与 HTTP API 共用 `application/runtime.py` 中的 factory，避免配置漂移；
+- 完整设计见 [`docs/public-api.md`](docs/public-api.md)。
+
 后续阶段：
 
 ```text
@@ -115,13 +128,15 @@ zglab-rag/
 ├── docs/
 │   ├── architecture.md
 │   ├── knowledge-model.md
-│   └── generation-grounding.md
+│   ├── generation-grounding.md
+│   └── public-api.md
 ├── knowledge/
 │   └── identity/
 │       └── profile.md
 ├── src/
 │   └── zglab_rag/
 │       ├── api/
+│       ├── application/
 │       ├── domain/
 │       ├── embeddings/
 │       ├── evaluation/
@@ -129,6 +144,7 @@ zglab-rag/
 │       ├── indexing/
 │       ├── retrieval/
 │       ├── generation/
+│       ├── reranking/
 │       ├── storage/
 │       └── sources/
 └── tests/
