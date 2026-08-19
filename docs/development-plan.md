@@ -232,31 +232,121 @@ Recall@20 保持 0.9255。Candidate 20 的 MRR 高于 10 和 30，但 CPU Rerank
 - private evidence 不进入 context；
 - 单元测试不调用真实 LLM。
 
-## Phase 9 — Evaluation Harness
+## Phase 9 — Public Assistant Product Layer
 
-建立带版本的 golden dataset，包含以下查询：
+状态：待实现。
 
-- 身份查询；
-- 项目查询；
-- 精确技术词查询；
-- 跨来源问题；
-- 证据不足问题；
-- 针对 private 数据的对抗问题。
+核心目标：把 Phase 8 验证完成的 `GroundedAnswerService` 包装成公网访客可用的产品层。
 
-分别跟踪 Retrieval 和 Generation。
+Phase 8 回答「系统怎样可靠回答问题」；Phase 9 回答「访客怎样可靠地使用系统」。
 
-## Phase 10 — 增量同步与生产部署
+Phase 9 不再优化 Chunking、Embedding、Vector Index、Retrieval algorithm、Hybrid、
+Reranker、Grounding 或 Citation rules——除非 API 集成暴露明确 bug，否则这些能力在
+Phase 9 视为冻结。
+
+实现内容（至少六类能力）：
+
+1. **Public API Contract**：`POST /api/v1/ask`，公网请求尽量窄（只接受 `question`），
+   `retrieval_mode` / `visibility` / `source_ids` / `top_k` / `provider` / `model` /
+   `debug` / `private mode` 全部由服务端控制。响应包含 `request_id` / `status` /
+   `answer` / `sources`，默认不暴露 chunk id、embedding score、reranker score、
+   provider details、token usage、repair count 或 internal diagnostics。
+2. **Streaming / Long Request UX**：v1 不直接流式发送未经 Citation Validation 的
+   LLM raw tokens；优先采用 status streaming / SSE（`retrieving → generating →
+   validating → completed`），最终 answer 必须在 structured generation + citation
+   validation 完成后才发送。真正的 token streaming 留到 Post-v1 Optimization。
+3. **Public Security Boundary**：question length limit、request body limit、
+   request timeout、rate limit、concurrency limit、public-only retrieval、
+   safe error mapping、CORS allowlist、secret isolation。禁止 private retrieval、
+   public debug mode、stack trace 泄露、provider secret 泄露。
+4. **API Error Model**：统一公网错误语义（`INVALID_REQUEST` / `RATE_LIMITED` /
+   `SERVICE_BUSY` / `GENERATION_TIMEOUT` / `PROVIDER_UNAVAILABLE` / `INTERNAL_ERROR`）；
+   `insufficient_evidence` 不是系统异常，而是正常业务结果（`status=insufficient_evidence`）。
+5. **Web Assistant Experience**：简单的 Personal Knowledge Assistant UI，第一版重点：
+   问题输入、回答展示、Sources 展示、loading/status、copy answer、error state、
+   mobile responsive。后端仍保持每次 question → 独立 retrieval → 独立 grounded
+   generation；Phase 9 不实现 Conversation Memory。
+6. **Acceptance**：覆盖「你是谁？」→ grounded answer + sources；「你做过哪些 Agent
+   项目？」→ project-grounded answer；「Memory 和 Context 有什么区别？」→ technical
+   answer + citation；知识库不存在的问题 → insufficient evidence；超长输入 → rejected；
+   provider timeout → safe public error；并发超过限制 → busy / rate limited；
+   prompt injection → system rules 不受影响；public request → 永远无法访问 private
+   evidence。
+
+## Phase 10 — Production Sync & Deployment
+
+状态：待实现。
+
+核心目标：让 Phase 9 的产品能够持续更新知识 + 稳定运行在生产服务器。Phase 10 不增加
+新的 RAG 算法能力。
 
 实现内容：
 
-- Git 来源 revision 检查；
-- 变化文档重新索引；
-- systemd service；
-- Nginx reverse proxy；
-- `/var/lib/zglab-rag/` 下的 runtime 数据；
-- 健康检查和日志。
+1. **Source Sync Layer**：Phase 2 的 `LocalGitSource` 继续保持 read-only；新增
+   Sync Layer 负责 remote revision check / `git fetch` / fast-forward / revision
+   before-after。原则：Sync Layer 负责更新 checkout，Source Adapter 只负责读取
+   checkout。
+2. **Incremental Reindex Pipeline**：最终生产链路：`revision unchanged → skip`；
+   `revision changed → ingestion → chunk diff → new/changed/unchanged/deleted →
+   only embed new+changed → vector update → FTS update → atomic apply`。复用
+   Phase 4 已完成的 Index Planner 与 Incremental Index Lifecycle。重要原则：
+   Source sync failure ≠ Serving failure——同步失败时继续使用旧 `knowledge.db`
+   提供问答。
+3. **Production Runtime Layout**：
+   ```text
+   /opt/zglab-rag/           application code
+   /opt/zglab-sources/       notes/ zglab-website/ resume-tailor-agent/ ...
+   /var/lib/zglab-rag/       knowledge.db  models/  cache/
+   /var/log/zglab-rag/       application logs  sync logs
+   /etc/zglab-rag/           production env
+   ```
+   禁止把 `knowledge.db`、models、source checkouts、runtime cache 长期放在
+   Git checkout 中。
+4. **Production Service**：保持轻量 `Internet → Nginx → FastAPI/Uvicorn →
+   SQLite + sqlite-vec → local BGE → external LLM API`。服务：
+   `zglab-rag.service`；同步：`zglab-rag-sync.service` + `zglab-rag-sync.timer`。
+   当前 2C2G 环境不引入 Kubernetes / Redis / Celery / Kafka / Milvus / Qdrant /
+   Elasticsearch——除非未来有明确需求。
+5. **Health / Readiness**：`GET /health`（进程正常）与 `GET /ready`（核心依赖
+   可服务：database、sqlite-vec、embedding profile、generation config）。
+6. **Lightweight Observability**：至少记录 `request_id` / `status` /
+   retrieval latency / generation latency / total latency / provider status /
+   token usage（如果可得）/ repair attempts / insufficient count / error category。
+   禁止记录 API Key、完整 private evidence、secret、未经必要处理的敏感 Prompt。
 
-不得把生产索引、数据库或模型缓存放在 Git checkout 中。
+## Evaluation 的新定位
+
+取消旧路线中「Phase 9 = Evaluation Harness」作为独立 Phase 的定义。Evaluation
+不是被删除，而是被重新定义为**贯穿整个项目的持续性基础设施**：
+
+- Phase 3 Embedding Evaluation
+- Phase 5 Vector Retrieval Evaluation
+- Phase 6 Hybrid Evaluation
+- Phase 7 Reranker Evaluation
+- Phase 8 Generation Evaluation
+- Phase 9 / Phase 10 继续作为 regression / acceptance 基础设施
+
+后续新增功能时允许增加 regression cases，但不再单独建设一个「Evaluation Phase」。
+已有的 `evaluation/retrieval.yaml`、`evaluation/generation.yaml`、
+`artifacts/benchmarks/` 与 `artifacts/evaluation/` 继续作为项目一等模块维护。
+
+## Post-v1 Optimization
+
+以下能力作为持续优化方向，**不作为 Phase 11 强行编号**，也不构成 Phase 9 / Phase 10
+的验收前置条件：
+
+- Reranker ONNX / INT8 量化与生产 enable evaluation
+- Answer latency optimization
+- max output tokens 调优
+- Real token streaming（在 Citation Validation 之后）
+- Caching（embedding / retrieval / answer）
+- Richer monitoring / metrics
+- Evaluation expansion（更多 category、hard negative、LLM Judge 探索）
+- Answerability / rejection threshold 研究
+- Conversation context / memory
+- Advanced Hybrid tuning（RRF 参数、列权重、score normalization）
+
+这些方向在 Phase 9 / Phase 10 验收后按需启动。
 
 ## Codex 任务规则
 

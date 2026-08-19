@@ -75,26 +75,26 @@ ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assis
 后续阶段：
 
 ```text
-v0  Architecture & source model
- ↓
-v1  Markdown ingestion
- ↓
-v2  Local source acquisition
- ↓
-v3  Embedding benchmark
- ↓
-v4  Persistent vector store / index lifecycle
- ↓
-v5  Production vector retriever
- ↓
-v6  Lexical + Hybrid retrieval
- ↓
-v7  CrossEncoder reranker evaluation
- ↓
-v8  Grounded answer + citations（当前）
- ↓
-v9  Evaluation harness / deployment
+Phase 0  Architecture                        ✅
+Phase 1  Markdown Ingestion                  ✅
+Phase 2  Knowledge Source Acquisition        ✅
+Phase 3  Embedding Evaluation                ✅
+Phase 4  Persistent Index Lifecycle          ✅
+Phase 5  Production Vector Retrieval         ✅
+Phase 6  Lexical / Hybrid Evaluation         ✅
+Phase 7  Reranker Evaluation                 ✅
+Phase 8  Grounded Generation                 ✅
+Phase 9  Public Assistant Product Layer       （当前）
+Phase 10 Production Sync & Deployment
 ```
+
+Evaluation 不是独立 Phase，而是贯穿项目的基础设施：
+Phase 3 Embedding Evaluation → Phase 5 Vector Retrieval Evaluation →
+Phase 6 Hybrid Evaluation → Phase 7 Reranker Evaluation →
+Phase 8 Generation Evaluation → Phase 9/10 继续作为 regression / acceptance 基础设施。
+
+Post-v1 Optimization（性能、Reranker 优化、streaming、cache、monitoring、
+evaluation expansion、answerability 等）不作为独立 Phase 编号。
 
 ## 目录
 

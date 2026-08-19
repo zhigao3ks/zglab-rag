@@ -480,9 +480,16 @@ Phase 8 冻结 Retrieval baseline（默认 Vector），在 `generation/` 建立�
 
 ## 15. Evaluation 架构
 
-Evaluation 应作为一等模块建设，而不是临时脚本。
+Evaluation 不是独立 Phase，而是**贯穿整个项目的持续性基础设施**。已有评测覆盖：
 
-数据集结构应支持：
+- Phase 3 Embedding Evaluation（`artifacts/benchmarks/`）
+- Phase 5 Vector Retrieval Evaluation（`artifacts/evaluation/`）
+- Phase 6 Hybrid Evaluation
+- Phase 7 Reranker Evaluation
+- Phase 8 Generation Evaluation（`evaluation/generation.yaml`）
+- Phase 9 / Phase 10 继续作为 regression / acceptance 基础设施
+
+数据集结构支持：
 
 ```text
 question
@@ -492,7 +499,7 @@ answer requirements
 scope / category
 ```
 
-Retrieval 指标可以包括：
+Retrieval 指标包括：
 
 - Recall@K；
 - MRR；
@@ -500,14 +507,108 @@ Retrieval 指标可以包括：
 - Reranker gain；
 - latency。
 
-Generation evaluation 未来可以包括：
+Generation evaluation 包括：
 
-- faithfulness；
-- completeness；
-- citation correctness；
+- evidence hit rate；
+- citation validity / coverage；
+- should-answer correctness；
+- insufficient-evidence correctness；
 - refusal 或 insufficient-evidence behavior。
 
-## 16. v0 暂不实现的内容
+后续新增功能时允许增加 regression cases，但不再单独建设一个「Evaluation Phase」。
+已有的 `evaluation/retrieval.yaml`、`evaluation/generation.yaml`、
+`artifacts/benchmarks/` 与 `artifacts/evaluation/` 继续作为项目一等模块维护。
+
+## 16. Phase 9 — Public Assistant Product Layer 架构方向
+
+Phase 9 把 Phase 8 的 `GroundedAnswerService` 包装为公网产品层。核心架构边界：
+
+```text
+公网访客
+  ↓
+Nginx / CORS / Rate Limit
+  ↓
+POST /api/v1/ask（只接受 question）
+  ↓
+服务端强制：visibility=public / retrieval_mode=vector / top_k=config
+  ↓
+GroundedAnswerService（Phase 8 冻结能力）
+  ↓
+Public Response（request_id / status / answer / sources）
+  ↓
+Status streaming / SSE（retrieving → generating → validating → completed）
+```
+
+Phase 9 不再优化 Chunking / Embedding / Vector Index / Retrieval algorithm / Hybrid /
+Reranker / Grounding / Citation rules——除非 API 集成暴露明确 bug，否则这些能力视为
+冻结。Phase 9 不实现 Conversation Memory；真正的 token streaming 留到 Post-v1
+Optimization。
+
+Public Security Boundary 至少包括：question length limit、request body limit、
+request timeout、rate limit、concurrency limit、public-only retrieval、
+safe error mapping、CORS allowlist、secret isolation。禁止 private retrieval、
+public debug mode、stack trace 泄露、provider secret 泄露。
+
+API Error Model 统一公网错误语义（`INVALID_REQUEST` / `RATE_LIMITED` /
+`SERVICE_BUSY` / `GENERATION_TIMEOUT` / `PROVIDER_UNAVAILABLE` / `INTERNAL_ERROR`）；
+`insufficient_evidence` 不是系统异常，而是正常业务结果。
+
+## 17. Phase 10 — Production Sync & Deployment 架构方向
+
+Phase 10 让 Phase 9 的产品能够持续更新知识 + 稳定运行在生产服务器。Phase 10 不增加
+新的 RAG 算法能力。
+
+Production Runtime Layout：
+
+```text
+/opt/zglab-rag/           application code
+/opt/zglab-sources/       notes/ zglab-website/ resume-tailor-agent/ ...
+/var/lib/zglab-rag/       knowledge.db  models/  cache/
+/var/log/zglab-rag/       application logs  sync logs
+/etc/zglab-rag/           production env
+```
+
+Source Sync Layer 与 Source Adapter 分离：Phase 2 的 `LocalGitSource` 继续保持
+read-only；新增 Sync Layer 负责 remote revision check / `git fetch` /
+fast-forward。Incremental Reindex Pipeline 复用 Phase 4 的 Index Planner：
+`revision unchanged → skip`；`revision changed → ingestion → chunk diff →
+new/changed/unchanged/deleted → only embed new+changed → vector update →
+FTS update → atomic apply`。Source sync failure ≠ Serving failure——同步失败
+时继续使用旧 `knowledge.db` 提供问答。
+
+Production Service 保持轻量 `Internet → Nginx → FastAPI/Uvicorn →
+SQLite + sqlite-vec → local BGE → external LLM API`。服务：
+`zglab-rag.service`；同步：`zglab-rag-sync.service` + `zglab-rag-sync.timer`。
+当前 2C2G 环境不引入 Kubernetes / Redis / Celery / Kafka / Milvus / Qdrant /
+Elasticsearch——除非未来有明确需求。
+
+Health / Readiness：`GET /health`（进程正常）与 `GET /ready`（核心依赖可服务：
+database、sqlite-vec、embedding profile、generation config）。
+
+Lightweight Observability 至少记录 `request_id` / `status` / retrieval latency /
+generation latency / total latency / provider status / token usage（如果可得）/
+repair attempts / insufficient count / error category。禁止记录 API Key、
+完整 private evidence、secret、未经必要处理的敏感 Prompt。
+
+## 18. Post-v1 Optimization 方向
+
+以下能力作为持续优化方向，不作为独立 Phase 编号，也不构成 Phase 9 / Phase 10 的
+验收前置条件：
+
+- Reranker ONNX / INT8 量化与生产 enable evaluation
+- Answer latency optimization
+- max output tokens 调优
+- Real token streaming（在 Citation Validation 之后）
+- Caching（embedding / retrieval / answer）
+- Richer monitoring / metrics
+- Evaluation expansion（更多 category、hard negative、LLM Judge 探索）
+- Answerability / rejection threshold 研究
+- Conversation context / memory
+- Advanced Hybrid tuning（RRF 参数、列权重、score normalization）
+
+这些方向在 Phase 9 / Phase 10 验收后按需启动。
+
+## 19. v0 暂不实现的内容
 
 暂不实现：
 
