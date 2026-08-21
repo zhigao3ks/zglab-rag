@@ -320,6 +320,77 @@ Phase 9 视为冻结。
    token usage（如果可得）/ repair attempts / insufficient count / error category。
    禁止记录 API Key、完整 private evidence、secret、未经必要处理的敏感 Prompt。
 
+## Phase 11 — External Research & Session Evidence
+
+状态：待实现。
+
+中文描述：外部研究与临时会话知识。正式目标是 Search → Research → Evidence →
+Grounded Answer，而不是简单的 Web Search。
+
+阶段定位：Phase 9 解决「访客如何使用助手」，Phase 10 解决「系统如何持续更新并稳定
+部署」，Phase 11 解决「个人知识不足时，助手如何安全获取外部知识」。它是新的
+Product Capability，不是 Phase 9 UI 功能、不是 Phase 10 部署功能、也不是 Post-v1
+Optimization；Phase 9 / Phase 10 的责任边界不重新修改。
+
+核心目标：当 Personal Knowledge Base 无法提供足够证据时，允许助手识别不足 →
+调用 WebResearchSkill → 从公网检索外部信息 → 转换为临时 External Evidence →
+基于这些 Evidence 继续 Grounded Generation → 返回可验证的外部来源引用。
+
+核心产品原则（冻结）：
+
+1. **Personal Knowledge First**：默认先用个人知识库，不每个问题都直接联网；
+2. **External Research Is Fallback**：只有 `GenerationStatus.INSUFFICIENT_EVIDENCE`
+   才有资格进入 Web Research；`ProviderFailure` / InternalError / Timeout /
+   RateLimit / ServiceBusy 绝不触发联网；不引入 LLM Router / Agent Planner；
+3. **Web Evidence Is Evidence**：外部网页不能让模型自由发挥，仍然必须
+   Evidence First + Citation Validation；
+4. **Web Evidence Is Temporary**：默认不写入 `knowledge.db`、长期 Embedding
+   Index、Personal Profile、Notes，不自动提交 Git；只是 request/session-scoped
+   evidence；
+5. **Persona ≠ Web Knowledge**：外部资料不能自动变成「我的经历 / 观点 / 做过的事」。
+
+Research Eligibility Policy：General / External Knowledge 可进入 Web Research；
+Personal Facts 在 Personal KB 无证据时默认继续拒答（同名人物污染、Persona Identity
+Integrity），未来只能用明确验证或 allowlist 的 Official Personal Sources；Private /
+Internal Information 不得通过 Web Research 绕过 public-only security boundary。
+
+子阶段：
+
+- **Phase 11A — Web Research Fallback**：单次 request 中 Personal Insufficient →
+  Web Research → Temporary Evidence → Answer；Evidence 生命周期为 request-scoped，
+  不要求完整多轮记忆；
+- **Phase 11B — Session Evidence Reuse**：同一浏览器 session 内临时复用已研究的
+  Web Evidence（含有限 Conversation Reference Context）；优先 in-memory ephemeral
+  store（TTL / max sessions / max evidence items / max bytes），不引入 Redis；
+- **Phase 11C — Product Integration / Evaluation**：SSE `researching` 阶段与可选
+  `status = researched` 的产品集成、外部来源 UI 展示，以及 Research Evaluation
+  作为验收基础设施（职责上确有必要，单独列出）。
+
+实现方向（详见 `docs/web-research-skill.md`）：`WebResearchSkill` 为固定 workflow
+（不是 Agent），未来模块 `src/zglab_rag/research/`；`SearchProvider` 抽象不绑定
+vendor；Search ≠ Evidence（search → fetch → extraction → ExternalEvidence[]）；
+Evidence 区分 `origin: personal | web`，Citation 继续复用短 Evidence ID 并映射为
+personal / web 两类 PublicSource；继承 Phase 8 Prompt Injection Boundary（网页内容
+= UNTRUSTED EVIDENCE DATA），并满足 SSRF 防护要求（localhost / RFC1918 /
+169.254.x.x / `file://` / metadata endpoint 屏蔽等）；Fallback 最多一次 Research
+Workflow，不允许无限递归；Research Query 第一版优先使用原始 question。
+
+验收标准（至少包含）：
+
+- Personal sufficient → 不联网；
+- General insufficient → 能 Research 并给出带真实 Citation 的 Web Answer；
+- Personal unknown → 不自动联网补个人事实；
+- Web Evidence 不进入 Personal KB（knowledge.db / Embedding Index / Profile /
+  Notes / Git）；
+- Prompt Injection 与 SSRF 边界成立（恶意网页内容只是 evidence，内网地址不可达）；
+- Research Failure → 不胡编（返回 insufficient_evidence + 友好语义，
+  内部 diagnostics 记 `RESEARCH_PROVIDER_UNAVAILABLE`）。
+
+第一版非目标：Autonomous Research Agent、Browser Automation、Arbitrary Tool Use、
+Private Web Crawling、Login-protected Pages、Paywall Bypass、永久知识自动
+ingestion、Auto-write Notes、Auto-update Profile、Redis、Full Conversation
+Memory、无引用 LLM 浏览、无限递归搜索。
+
 ## Evaluation 的新定位
 
 取消旧路线中「Phase 9 = Evaluation Harness」作为独立 Phase 的定义。Evaluation
@@ -338,8 +409,9 @@ Phase 9 视为冻结。
 
 ## Post-v1 Optimization
 
-以下能力作为持续优化方向，**不作为 Phase 11 强行编号**，也不构成 Phase 9 / Phase 10
-的验收前置条件：
+以下能力作为持续优化方向，**不作为独立 Phase 编号**（Phase 11 编号已被 External
+Research & Session Evidence 占用；它是 Product Capability Expansion，不属于本
+优化轨道），也不构成 Phase 9 / Phase 10 的验收前置条件：
 
 - Reranker ONNX / INT8 量化与生产 enable evaluation
 - Answer latency optimization

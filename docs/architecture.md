@@ -606,10 +606,122 @@ generation latency / total latency / provider status / token usage（如果可�
 repair attempts / insufficient count / error category。禁止记录 API Key、
 完整 private evidence、secret、未经必要处理的敏感 Prompt。
 
-## 18. Post-v1 Optimization 方向
+## 18. Phase 11 — External Research & Session Evidence 架构方向
+
+Phase 11 状态：**待实现**（本章节只冻结架构边界，不含实现）。
+
+阶段定位：Phase 9 解决「访客如何使用助手」，Phase 10 解决「系统如何持续更新并稳定
+部署」，Phase 11 解决「个人知识不足时，助手如何安全获取外部知识」。它是新的
+Product Capability，不是 Phase 9 UI 功能、不是 Phase 10 部署功能，也不是 Post-v1
+Optimization；Phase 9 / Phase 10 的责任边界不变。完整设计见
+`docs/web-research-skill.md`。
+
+### External Research Fallback Architecture
+
+概念链路（固定 Workflow，不是 LLM Autonomous Agent；第一版不允许模型自主决定
+何时随意调用工具）：
+
+```text
+User Question
+      ↓
+Personal Knowledge Retrieval
+      ↓
+GroundedAnswerService
+      │
+      ├── ANSWERED
+      │      ↓
+      │   Return personal-grounded answer
+      │
+      └── INSUFFICIENT_EVIDENCE
+             ↓
+       Research Eligibility Policy
+             ↓
+       Web Research Skill
+             ↓
+       External Evidence
+             ↓
+       Temporary Evidence Context
+             ↓
+       Grounded Generation
+             ↓
+       Citation Validation
+             ↓
+       Researched Answer
+```
+
+### Personal-first 与 Fallback Trigger
+
+- **Personal Knowledge First**：默认首先使用个人知识库，不得每个问题都直接联网；
+- 触发条件复用 Phase 8 的 `GenerationStatus.INSUFFICIENT_EVIDENCE`，不引入 LLM
+  Router / Agent Planner；`ProviderFailure`、InternalError、Timeout、RateLimit、
+  ServiceBusy 绝不触发 Web Research；
+- Fallback 不允许无限递归：第一版最多一次 Research Workflow（Personal KB →
+  Web Research → Generation）。
+
+### Eligibility Policy
+
+并非所有 insufficient query 都自动联网：**A. General / External Knowledge** 可进入
+Web Research；**B. Personal Facts**（手机号、实习公司、获奖等）在 Personal KB 无
+证据时默认继续拒答，不通过普通 Web Search 给本人补事实（同名人物污染、Persona
+Identity Integrity）；**C. Private / Internal Information** 不得通过 Web Research
+绕过 public-only security boundary。
+
+### WebResearchSkill 与模块边界
+
+`WebResearchSkill` 是 **Fixed Workflow Capability**，不是 Agent。推荐未来模块：
+`src/zglab_rag/research/`（contracts / service / policy / providers / fetching /
+extraction，本次不创建）。搜索能力通过 `SearchProvider` 抽象接入
+（`search(query) → SearchResult[]`），不绑定具体 vendor。Search ≠ Evidence：
+推荐研究链 query → search results → candidate selection → fetch → extraction →
+normalization → ExternalEvidence[]，不把 title + snippet 直接等同于可信网页全文。
+
+### Temporary Evidence 与 Web Citation
+
+- Web Evidence 是 request/session-scoped：默认不写入 `knowledge.db`、长期
+  Embedding Index、Personal Profile、Notes，不自动提交 Git（No Permanent
+  Ingestion）；Persona ≠ Web Knowledge；
+- Evidence 区分 `origin: personal | web`；Web Evidence 至少包含 evidence_id /
+  title / url / content / retrieved_at，不伪装成 Markdown chunk；
+- Citation 继续复用短 Evidence ID（E1…En），CitationValidator 映射为
+  `type: personal`（source_path/section）与 `type: web`（url/domain）两类
+  PublicSource；外部 URL 必须来自系统实际检索结果，LLM 不得生成、修改或凭空
+  添加 citation URL。
+
+### Prompt Injection Boundary 与网络安全
+
+External Evidence 是不可信数据：继承 Phase 8 Prompt Injection Boundary，网页内容
+只能作为 UNTRUSTED EVIDENCE DATA，不得提升为 system / developer / tool
+instruction。实现时必须满足 HTML/Script 清理、页面大小限制、fetch timeout、
+redirect limit、content-type allowlist、URL validation、localhost / RFC1918 /
+169.254.x.x / `file://` / metadata endpoint 屏蔽等 SSRF 防护要求（公网用户可
+间接触发网络请求）。
+
+### Phase 11A / 11B 与 UI 扩展
+
+- **11A Web Research Fallback**：单次 request 内 Personal Insufficient → Research
+  → Temporary Evidence → Answer，Evidence 为 request-scoped；
+- **11B Session Evidence Reuse**：同一浏览器 session 内临时复用已研究的 Web
+  Evidence，优先 in-memory ephemeral store（TTL / max sessions / max items /
+  max bytes），不引入 Redis；
+- UI / SSE 未来扩展：增加 `researching` 阶段与可选 `status = researched`，不提前
+  修改当前 Phase 9C 契约；不把 researched 伪装成 personal grounded answer；
+- Failure Model：Personal Insufficient + Web Research Unavailable →
+  `insufficient_evidence`（内部 diagnostics 记 `RESEARCH_PROVIDER_UNAVAILABLE`），
+  不是 INTERNAL_ERROR，不虚构答案；
+- Evaluation 继续是基础设施：Phase 11 新增独立 Research Evaluation（personal
+  sufficient 不联网、general insufficient 触发 research、citation 有效、个人事实
+  不自动补全、private 边界不绕过、provider failure 不胡编、prompt injection 只是
+  evidence、幻觉 URL 被拒、SSRF / timeout 等，见 `docs/web-research-skill.md`）。
+
+Phase 11 是扩展 Evidence Source，不是绕过 Grounding；Phase 8 的 Grounding 基本原则
+不变。第一版非目标：Autonomous Research Agent、Browser Automation、永久知识自动
+ingestion、Redis、Full Conversation Memory、无引用 LLM 浏览、无限递归搜索等。
+
+## 19. Post-v1 Optimization 方向
 
 以下能力作为持续优化方向，不作为独立 Phase 编号，也不构成 Phase 9 / Phase 10 的
-验收前置条件：
+验收前置条件。Phase 11（External Research & Session Evidence）是 Product
+Capability Expansion，不属于本轨道；本节内容保持为独立的非编号优化方向：
 
 - Reranker ONNX / INT8 量化与生产 enable evaluation
 - Answer latency optimization
@@ -624,7 +736,7 @@ repair attempts / insufficient count / error category。禁止记录 API Key、
 
 这些方向在 Phase 9 / Phase 10 验收后按需启动。
 
-## 19. v0 暂不实现的内容
+## 20. v0 暂不实现的内容
 
 暂不实现：
 

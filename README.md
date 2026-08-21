@@ -116,6 +116,21 @@ Phase 9C 新增面向访客的 Web Assistant UI（`web/`）：
   127.0.0.1:8000`）；单测 `npm run test:run`；构建 `npm run build`；
   详见 [`web/README.md`](web/README.md)。
 
+Phase 11（待实现）冻结新产品能力 **External Research & Session Evidence**（外部研究
+与临时会话知识）：当 Personal Knowledge Base 证据不足时，通过 Web Research Skill
+检索公网资料，转换为仅用于当前请求 / 临时 session 的 External Evidence，再经
+Grounded Generation + Citation Validation 返回带可验证外部来源引用的回答：
+
+- Personal Knowledge First：默认先用个人知识库，不每个问题都联网；
+- External Research 只是 `insufficient_evidence` 的 fallback，provider 故障、
+  timeout、限流等技术失败绝不触发联网；
+- Web Evidence 同样是 Evidence，必须经过 Citation Validation；外部 URL 只能来自
+  系统实际检索结果，LLM 不得生成或修改 citation URL；
+- 临时 Evidence 不写入 `knowledge.db`、长期 Embedding Index、Personal Profile 或
+  Notes；外部资料不自动成为个人事实（Persona ≠ Web Knowledge）；
+- 完整设计（eligibility policy、SSRF / Prompt Injection 边界、Phase 11A/11B 交付
+  计划）见 [`docs/web-research-skill.md`](docs/web-research-skill.md)。
+
 后续阶段：
 
 ```text
@@ -130,15 +145,19 @@ Phase 7  Reranker Evaluation                 ✅
 Phase 8  Grounded Generation                 ✅
 Phase 9  Public Assistant Product Layer       （当前）
 Phase 10 Production Sync & Deployment
+Phase 11 External Research & Session Evidence
 ```
 
 Evaluation 不是独立 Phase，而是贯穿项目的基础设施：
 Phase 3 Embedding Evaluation → Phase 5 Vector Retrieval Evaluation →
 Phase 6 Hybrid Evaluation → Phase 7 Reranker Evaluation →
-Phase 8 Generation Evaluation → Phase 9/10 继续作为 regression / acceptance 基础设施。
+Phase 8 Generation Evaluation → Phase 9/10/11 继续作为 regression / acceptance
+基础设施（Phase 11 新增独立 Research Evaluation）。
 
 Post-v1 Optimization（性能、Reranker 优化、streaming、cache、monitoring、
-evaluation expansion、answerability 等）不作为独立 Phase 编号。
+evaluation expansion、answerability 等）不作为独立 Phase 编号。Phase 11 是
+Product Capability Expansion，不是 Post-v1 Optimization；Post-v1 保持非编号
+优化轨道不变。
 
 ## 目录
 
@@ -160,7 +179,8 @@ zglab-rag/
 │   ├── architecture.md
 │   ├── knowledge-model.md
 │   ├── generation-grounding.md
-│   └── public-api.md
+│   ├── public-api.md
+│   └── web-research-skill.md
 ├── knowledge/
 │   └── identity/
 │       └── profile.md
