@@ -2,6 +2,14 @@
 
 Phase 9A 实现了公网 API 契约和安全边界。
 
+> **Public API v1 Freeze（Phase 9D）**：Phase 9 完成后，本文档描述的端点、
+> request/response 契约、public status（`answered` / `insufficient_evidence`）、
+> 错误码与 SSE stages（accepted / retrieving / generating / validating /
+> completed / error）冻结为 Public API v1，后续变更须走版本升级。
+> Phase 11 未来新增 `researching` 阶段与 `researched` status 属于向后兼容
+> 扩展，不得破坏现有 Phase 9 client。验收记录见
+> `docs/evaluations/phase-9-product-acceptance.md`。
+
 ## 概述
 
 公网 API 把 Phase 8 验证完成的 `GroundedAnswerService` 包装成安全、窄接口、可测试的公网服务。

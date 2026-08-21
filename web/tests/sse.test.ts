@@ -68,6 +68,31 @@ describe("SseIncrementalParser", () => {
     expect(events).toEqual([{ event: "accepted", data: "{}" }]);
   });
 
+  it("survives a CRLF split between \\r and \\n across chunks", () => {
+    const parser = new SseIncrementalParser();
+    const data = JSON.stringify({ request_id: "r1", stage: "retrieving" });
+
+    // First chunk ends exactly on the \r of the terminating blank line.
+    expect(parser.feed(`event: retrieving\r\ndata: ${data}\r`)).toEqual([]);
+    const events = parser.feed("\n\r\n");
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({ event: "retrieving", data });
+  });
+
+  it("keeps fields intact when the split lands mid-field-name under CRLF", () => {
+    const parser = new SseIncrementalParser();
+    expect(parser.feed("event: gene")).toEqual([]);
+    const events = parser.feed("rating\r\ndata: {}\r\n\r\n");
+    expect(events).toEqual([{ event: "generating", data: "{}" }]);
+  });
+
+  it("treats an empty data field as an empty-string payload", () => {
+    const parser = new SseIncrementalParser();
+    const events = parser.feed("event: accepted\ndata:\n\n");
+    expect(events).toEqual([{ event: "accepted", data: "" }]);
+  });
+
   it("drops an incomplete trailing event on flush", () => {
     const parser = new SseIncrementalParser();
     parser.feed("event: completed\ndata: {\"partial");

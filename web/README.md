@@ -78,3 +78,10 @@ web/
 - 请求中禁止提交时重复发送（后端 production baseline concurrency=1）。
 - AbortController 仅用于组件卸载时断开 fetch；HTTP disconnect 不等于
   后端 generation 取消（Phase 9B 冻结语义）。
+
+## 契约稳定性（Phase 9D 验收后）
+
+Phase 9D 全系统产品验收通过后，后端 Public API v1（端点、status、错误码、
+SSE stages）已冻结；前端 SSE client 契约随之稳定。Phase 11 未来新增
+`researching` / `researched` 将是向后兼容扩展，不破坏当前客户端。验收记录见
+仓库根 `docs/evaluations/phase-9-product-acceptance.md`。

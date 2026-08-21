@@ -521,7 +521,7 @@ Generation evaluation 包括：
 
 ## 16. Phase 9 — Public Assistant Product Layer 架构方向
 
-Phase 9 状态：**总体进行中**
+Phase 9 状态：**已完成（9A / 9B / 9C / 9D）**
 
 - 9A Public API Contract + Security Boundary = 完成（`POST /api/v1/ask`、窄公网契约、
   统一错误 envelope、并发/速率/请求体限制、CORS、slot 所有权与两层 deadline 语义，
@@ -535,7 +535,9 @@ Phase 9 状态：**总体进行中**
   全部 Vue text binding（无 v-html）防 XSS；会话仅内存态、无持久化、无
   Conversation Memory；pre-stream JSON 错误与 post-stream SSE error 分别映射
   为安全中文文案 + request_id）
-- 9D Integration Acceptance = 未开始
+- 9D Integration Acceptance = 完成（按 Acceptance Matrix 完成真实后端 + 真实
+  浏览器全系统验收，15 项 Acceptance Gate 全部通过；Public API v1 契约冻结；
+  见 `docs/evaluations/phase-9-product-acceptance.md`）
 
 Phase 9 把 Phase 8 的 `GroundedAnswerService` 包装为公网产品层。核心架构边界：
 

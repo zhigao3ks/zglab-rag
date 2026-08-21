@@ -116,6 +116,20 @@ Phase 9C 新增面向访客的 Web Assistant UI（`web/`）：
   127.0.0.1:8000`）；单测 `npm run test:run`；构建 `npm run build`；
   详见 [`web/README.md`](web/README.md)。
 
+Phase 9D 完成全系统产品验收（End-to-End Integration & Product Acceptance）：
+
+- 按 Acceptance Matrix（Public API / SSE Lifecycle / Grounded Generation /
+  Security / Web UX / Error Handling / Accessibility / Responsive / Runtime
+  Lifecycle / Regression）完成真实后端 + 真实浏览器验收，15 项 Acceptance Gate
+  全部通过；
+- Public API v1 契约冻结：`POST /api/v1/ask`、`POST /api/v1/ask/stream`、
+  public status、错误码与 SSE stages；Phase 11 未来的 `researching` /
+  `researched` 属于向后兼容扩展；
+- 验收记录见 [`docs/evaluations/phase-9-product-acceptance.md`](docs/evaluations/phase-9-product-acceptance.md)。
+
+**Phase 9 — Public Assistant Product Layer 已完成（9A/9B/9C/9D）；
+Phase 10 是下一阶段。**
+
 Phase 11（待实现）冻结新产品能力 **External Research & Session Evidence**（外部研究
 与临时会话知识）：当 Personal Knowledge Base 证据不足时，通过 Web Research Skill
 检索公网资料，转换为仅用于当前请求 / 临时 session 的 External Evidence，再经
@@ -143,8 +157,8 @@ Phase 5  Production Vector Retrieval         ✅
 Phase 6  Lexical / Hybrid Evaluation         ✅
 Phase 7  Reranker Evaluation                 ✅
 Phase 8  Grounded Generation                 ✅
-Phase 9  Public Assistant Product Layer       （当前）
-Phase 10 Production Sync & Deployment
+Phase 9  Public Assistant Product Layer       ✅
+Phase 10 Production Sync & Deployment         （下一阶段）
 Phase 11 External Research & Session Evidence
 ```
 
@@ -180,7 +194,8 @@ zglab-rag/
 │   ├── knowledge-model.md
 │   ├── generation-grounding.md
 │   ├── public-api.md
-│   └── web-research-skill.md
+│   ├── web-research-skill.md
+│   └── evaluations/（Phase 9 产品验收矩阵、Phase 7 reranker 评测等）
 ├── knowledge/
 │   └── identity/
 │       └── profile.md

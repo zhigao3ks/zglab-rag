@@ -356,6 +356,15 @@ class TestPreStreamErrors:
         assert response.json()["error"]["code"] == "SERVICE_BUSY"
         guard.release()
 
+    def test_oversized_body_before_stream_is_json(self) -> None:
+        settings = _default_settings()
+        oversized = "a" * (settings.api_max_request_body_bytes + 1024)
+        client, _, _, _ = _stream_client(settings, FakeProgressAnswerService())
+        response = client.post(STREAM_URL, json={"question": oversized})
+        assert response.status_code == 413
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json()["error"]["code"] == "INVALID_REQUEST"
+
     def test_public_only_invariant_on_stream(self) -> None:
         """SSE never becomes a bypass: retrieval controls stay server-side."""
         service = FakeProgressAnswerService()

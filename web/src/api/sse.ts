@@ -34,10 +34,15 @@ export class SseIncrementalParser {
   feed(chunk: string): RawSseEvent[] {
     this.buffer += chunk;
     const events: RawSseEvent[] = [];
-    // Normalize CRLF; keep the trailing partial line in the buffer.
-    const normalized = this.buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    // Normalize CRLF; keep the trailing partial line in the buffer. A
+    // trailing \r is ambiguous (standalone CR line ending vs the first half
+    // of a CRLF split across chunks), so it is kept verbatim in the buffer
+    // and only resolved once the next chunk arrives.
+    const pendingCr = this.buffer.endsWith("\r");
+    const scannable = pendingCr ? this.buffer.slice(0, -1) : this.buffer;
+    const normalized = scannable.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     const lines = normalized.split("\n");
-    this.buffer = lines.pop() ?? "";
+    this.buffer = (lines.pop() ?? "") + (pendingCr ? "\r" : "");
     for (const line of lines) {
       const finished = this.consumeLine(line);
       if (finished !== null) {
@@ -53,6 +58,11 @@ export class SseIncrementalParser {
    * incomplete and deliberately dropped.
    */
   flush(): RawSseEvent[] {
+    // Resolve a pending trailing CR as a standalone line break before
+    // discarding the incomplete remainder.
+    if (this.buffer.endsWith("\r")) {
+      this.consumeLine(this.buffer.slice(0, -1));
+    }
     this.buffer = "";
     this.resetEvent();
     return [];

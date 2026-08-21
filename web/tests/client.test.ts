@@ -189,4 +189,52 @@ describe("askStream", () => {
     await askStream("问题？", callbacks, new AbortController().signal);
     expect(callbacks.onCompleted.mock.calls[0][0].answer).toEqual("中文回答");
   });
+
+  it("handles a multibyte UTF-8 character split at an exact byte boundary", async () => {
+    // Deterministically cut inside the three-byte encoding of "文" so the
+    // first chunk ends mid-character; TextDecoder(stream: true) must buffer
+    // the partial codepoint.
+    const encoder = new TextEncoder();
+    const full =
+      "event: completed\ndata: {\"request_id\":\"r1\",\"status\":\"answered\"," +
+      "\"answer\":\"中文\",\"sources\":[]}\n\n";
+    const bytes = encoder.encode(full);
+    const splitAt = bytes.indexOf(0xE6); // first byte of "文"
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, splitAt + 1));
+        controller.enqueue(bytes.slice(splitAt + 1));
+        controller.close();
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
+    );
+    const callbacks = makeCallbacks();
+    await askStream("问题？", callbacks, new AbortController().signal);
+    expect(callbacks.onCompleted.mock.calls[0][0].answer).toEqual("中文");
+  });
+
+  it("maps pre-stream INVALID_REQUEST errors without SSE parsing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          { request_id: "r7", error: { code: "INVALID_REQUEST", message: "too long" } },
+          400,
+        ),
+      ),
+    );
+    const callbacks = makeCallbacks();
+    await askStream("问题？", callbacks, new AbortController().signal);
+    expect(callbacks.onError).toHaveBeenCalledWith("INVALID_REQUEST", "r7");
+    expect(callbacks.onNetworkFailure).not.toHaveBeenCalled();
+    expect(callbacks.onCompleted).not.toHaveBeenCalled();
+  });
 });

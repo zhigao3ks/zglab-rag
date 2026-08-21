@@ -234,13 +234,15 @@ Recall@20 保持 0.9255。Candidate 20 的 MRR 高于 10 和 30，但 CPU Rerank
 
 ## Phase 9 — Public Assistant Product Layer
 
-状态：**总体进行中**
+状态：**已完成（9A / 9B / 9C / 9D）**
 
 - 9A Public API Contract + Security Boundary = 完成
 - 9B Status SSE + Request Lifecycle = 完成
 - 9C Web Assistant UI = 完成（`web/`：Vue 3 + Vite + TypeScript，fetch +
   ReadableStream 增量 SSE client，无 v-html，会话仅内存态；见 `web/README.md`）
-- 9D Integration Acceptance = 未开始
+- 9D Integration Acceptance = 完成（按 Acceptance Matrix 完成真实后端 + 真实
+  浏览器全系统验收，15 项 Acceptance Gate 全部通过；Public API v1 契约冻结；
+  见 `docs/evaluations/phase-9-product-acceptance.md`）
 
 核心目标：把 Phase 8 验证完成的 `GroundedAnswerService` 包装成公网访客可用的产品层。
 

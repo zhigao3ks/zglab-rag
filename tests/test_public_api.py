@@ -348,6 +348,18 @@ class TestAskEndpointValidation:
         data = response.json()
         assert data["error"]["code"] == "INVALID_REQUEST"
 
+    def test_oversized_body_rejected(
+        self, client: TestClient, settings: Settings
+    ) -> None:
+        # Body limit is enforced pre-stream via content-length; the request
+        # never reaches validation or generation.
+        oversized = "a" * (settings.api_max_request_body_bytes + 1024)
+        response = client.post("/api/v1/ask", json={"question": oversized})
+        assert response.status_code == 413
+        data = response.json()
+        assert data["error"]["code"] == "INVALID_REQUEST"
+        assert "request_id" in data
+
 
 # ---------------------------------------------------------------------------
 # Request ID tests
