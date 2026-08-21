@@ -530,7 +530,11 @@ Phase 9 状态：**总体进行中**
   streaming 而非 raw token streaming，最终 answer 仍经 structured generation →
   CitationValidator → deterministic rendering 后一次性发送；与 /ask 共用同一
   request lifecycle 与 slot 所有权不变量）
-- 9C Web Assistant UI = 未开始
+- 9C Web Assistant UI = 完成（`web/`：Vue 3 + Vite + TypeScript 公网产品界面；
+  `EventSource` 不支持 POST，改用 fetch + ReadableStream + 增量 SSE parser；
+  全部 Vue text binding（无 v-html）防 XSS；会话仅内存态、无持久化、无
+  Conversation Memory；pre-stream JSON 错误与 post-stream SSE error 分别映射
+  为安全中文文案 + request_id）
 - 9D Integration Acceptance = 未开始
 
 Phase 9 把 Phase 8 的 `GroundedAnswerService` 包装为公网产品层。核心架构边界：

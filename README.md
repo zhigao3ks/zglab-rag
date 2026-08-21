@@ -99,6 +99,23 @@ Phase 9B 新增状态 SSE（不是 raw token streaming）：
 - thread → async bridge 使用 stdlib SimpleQueue + `loop.call_soon_threadsafe`，
   不改变 Phase 8 同步 provider。
 
+Phase 9C 新增面向访客的 Web Assistant UI（`web/`）：
+
+- Vue 3 + Vite + TypeScript（Composition API），原生 / scoped CSS，无 UI 框架；
+- `POST /api/v1/ask/stream` 是 POST 端点，浏览器 `EventSource` 不可用，改用
+  fetch + ReadableStream + TextDecoder 与自实现的增量 SSE parser（跨 chunk 重组、
+  heartbeat comment 忽略、JSON.parse 禁用 eval）；
+- 阶段状态映射为访客文案（正在检索公开知识库 / 整理回答 / 核验引用），
+  最终回答在 `completed` 事件一次性展示并附 Sources；insufficient_evidence
+  作为正常业务结果展示，不是红色系统错误；
+- 全部 Vue text binding（无 v-html）防 XSS；会话仅内存态，不持久化、不随请求
+  发送历史、无 Conversation Memory；
+- pre-stream JSON 错误与 post-stream SSE error 均映射为安全中文文案 +
+  request_id；组件卸载时 AbortController 断开 fetch（不等于后端取消）；
+- 开发：`cd web && npm install && npm run dev`（Vite proxy `/api →
+  127.0.0.1:8000`）；单测 `npm run test:run`；构建 `npm run build`；
+  详见 [`web/README.md`](web/README.md)。
+
 后续阶段：
 
 ```text
@@ -147,6 +164,9 @@ zglab-rag/
 ├── knowledge/
 │   └── identity/
 │       └── profile.md
+├── web/
+│   ├── src/（Vue 3 + Vite + TypeScript 公网 UI）
+│   └── tests/（Vitest）
 ├── src/
 │   └── zglab_rag/
 │       ├── api/

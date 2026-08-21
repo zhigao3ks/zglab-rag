@@ -238,7 +238,8 @@ Recall@20 保持 0.9255。Candidate 20 的 MRR 高于 10 和 30，但 CPU Rerank
 
 - 9A Public API Contract + Security Boundary = 完成
 - 9B Status SSE + Request Lifecycle = 完成
-- 9C Web Assistant UI = 未开始
+- 9C Web Assistant UI = 完成（`web/`：Vue 3 + Vite + TypeScript，fetch +
+  ReadableStream 增量 SSE client，无 v-html，会话仅内存态；见 `web/README.md`）
 - 9D Integration Acceptance = 未开始
 
 核心目标：把 Phase 8 验证完成的 `GroundedAnswerService` 包装成公网访客可用的产品层。

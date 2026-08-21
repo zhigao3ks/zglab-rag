@@ -425,3 +425,24 @@ src/zglab_rag/
 ```
 
 CLI 和 HTTP API 共用 `application/runtime.py` 中的 factory，避免配置漂移。
+
+## 前端消费（Phase 9C）
+
+Phase 9C 的 Web UI（`web/`，Vue 3 + Vite + TypeScript）是上述公网契约的唯一
+消费方，客户端实现受以下契约事实约束：
+
+- `/api/v1/ask/stream` 是 POST 端点，浏览器 `EventSource`（仅 GET）不可用；
+  前端使用 fetch + ReadableStream + TextDecoder 与自实现的增量 SSE parser，
+  事件可跨任意 network chunk 边界拆分，heartbeat comment 被忽略；
+- pre-stream 错误（400/413/422/429/503，`application/json`）与 post-stream
+  `event: error` 在前端统一映射为安全中文文案 + `request_id`，不渲染 stack
+  trace、异常名或服务器原始响应体；
+- 前端渲染全部使用 Vue text binding（无 v-html），回答按纯文本展示；
+- 每次提问是独立请求：不发送会话历史、无 Conversation Memory、无本地持久化；
+- 请求处理中禁止重复提交（对应后端 concurrency=1 baseline）；组件卸载时
+  AbortController 断开 fetch，但 HTTP disconnect ≠ 后端 generation 取消
+  （Phase 9B 冻结语义）。
+
+开发联调通过 Vite dev proxy（`/api → http://127.0.0.1:8000`）同源转发；
+生产部署（Phase 10）为 Nginx 同源，业务代码不写死 localhost。详见
+[`web/README.md`](../web/README.md)。
