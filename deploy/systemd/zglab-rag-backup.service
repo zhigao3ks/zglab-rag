@@ -1,0 +1,19 @@
+[Unit]
+Description=ZGLab RAG daily knowledge database backup
+After=zglab-rag-api.service
+
+[Service]
+Type=oneshot
+User=zglab
+Group=zglab
+WorkingDirectory=/opt/zglab-rag/app
+EnvironmentFile=/opt/zglab-rag/.env
+Environment=ZGLAB_RAG_DATA_DIR=/opt/zglab-rag/runtime
+Environment=ZGLAB_RAG_DATABASE_PATH=/opt/zglab-rag/runtime/knowledge.db
+Environment=ZGLAB_RAG_BACKUP_DIR=/opt/zglab-rag/runtime/backups
+Environment=PYTHONPATH=/opt/zglab-rag/app/src
+ExecStart=/opt/zglab-rag/app/.venv/bin/python -m zglab_rag.cli backup
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/zglab-rag/runtime

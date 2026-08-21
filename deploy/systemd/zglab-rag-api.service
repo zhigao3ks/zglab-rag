@@ -1,0 +1,39 @@
+[Unit]
+Description=ZGLab Personal Knowledge Assistant API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zglab
+Group=zglab
+WorkingDirectory=/opt/zglab-rag/app
+EnvironmentFile=/opt/zglab-rag/.env
+Environment=ZGLAB_RAG_ENV=production
+Environment=ZGLAB_RAG_DATA_DIR=/opt/zglab-rag/runtime
+Environment=ZGLAB_RAG_DATABASE_PATH=/opt/zglab-rag/runtime/knowledge.db
+Environment=ZGLAB_RAG_BACKUP_DIR=/opt/zglab-rag/runtime/backups
+Environment=ZGLAB_RAG_SOURCES_CONFIG=/opt/zglab-rag/app/config/sources.yaml
+Environment='ZGLAB_RAG_API_CORS_ORIGINS=["https://ask.zglab.fun"]'
+Environment='ZGLAB_RAG_API_TRUSTED_PROXY_IPS=["127.0.0.1","::1"]'
+Environment=HF_HOME=/opt/zglab-rag/models/huggingface
+Environment=HF_HUB_CACHE=/opt/zglab-rag/models/huggingface/hub
+Environment=HF_ENDPOINT=https://hf-mirror.com
+Environment=HF_HUB_OFFLINE=1
+Environment=TOKENIZERS_PARALLELISM=false
+Environment=PYTHONPATH=/opt/zglab-rag/app/src
+ExecStart=/opt/zglab-rag/app/.venv/bin/python -m uvicorn zglab_rag.api.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1 --no-access-log
+Restart=always
+RestartSec=5
+TimeoutStartSec=180
+TimeoutStopSec=120
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/zglab-rag/runtime /opt/zglab-rag/models
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

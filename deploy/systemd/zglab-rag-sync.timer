@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the ZGLab RAG source sync every day
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=zglab-rag-sync.service
+
+[Install]
+WantedBy=timers.target

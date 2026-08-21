@@ -35,6 +35,7 @@ from collections.abc import AsyncIterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager, contextmanager
+from time import perf_counter
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -59,6 +60,7 @@ from zglab_rag.api.contracts import (
     PublicStreamStage,
     PublicStreamStatus,
 )
+from zglab_rag.api.observability import log_http_request
 from zglab_rag.api.rate_limit import RateLimiter, RateLimitExceededError
 from zglab_rag.api.sse import SSE_HEADERS, SSE_HEARTBEAT, encode_sse_event
 from zglab_rag.config import Settings, get_settings
@@ -72,6 +74,16 @@ from zglab_rag.generation.errors import GenerationError, ProviderFailure
 from zglab_rag.sources.registry import SourceRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_production_logging() -> None:
+    """Ensure JSON application records reach systemd's standard-error stream."""
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.getLogger("zglab_rag").setLevel(logging.INFO)
+    for library_logger in ("sentence_transformers", "transformers", "huggingface_hub"):
+        logging.getLogger(library_logger).setLevel(logging.WARNING)
 
 
 class AnswerService(Protocol):
@@ -127,13 +139,26 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        if app.state.runtime is None:
-            # Fail-fast production startup: load embedding model and validate
-            # configuration before serving the first public request.
-            app.state.runtime = _get_runtime()
+        _configure_production_logging()
+        app.state.ready = False
+        app.state.startup_error = None
+        started = perf_counter()
+        try:
+            if app.state.runtime is None:
+                # Fail-fast production startup: load embedding model and validate
+                # configuration before serving the first public request.
+                app.state.runtime = _get_runtime()
+                app.state.runtime.verify_ready()
+            app.state.ready = True
+            logger.info("runtime_ready startup_ms=%.3f", (perf_counter() - started) * 1000)
+        except Exception:
+            app.state.startup_error = "runtime_initialization_failed"
+            logger.error("runtime_startup_failed error_code=RUNTIME_NOT_READY")
+            raise
         try:
             yield
         finally:
+            app.state.ready = False
             # Do not block process shutdown on timed-out generation tasks:
             # their slots are owned by the tasks themselves and the LLM
             # provider has its own timeout as a backstop.
@@ -167,6 +192,36 @@ def create_app(
     # Thread pool for executing blocking generation calls (app-scoped)
     app.state.executor = executor
 
+    @app.middleware("http")
+    async def log_public_request(request: Request, call_next):
+        started = perf_counter()
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request.state.request_id = request_id
+        try:
+            response = await call_next(request)
+        except Exception:
+            log_http_request(
+                logger,
+                request_id=request_id,
+                path=request.url.path,
+                latency_ms=(perf_counter() - started) * 1000,
+                status=500,
+                error_code=PublicErrorCode.INTERNAL_ERROR.value,
+            )
+            raise
+        error_code = response.headers.get("X-ZGLab-Internal-Error-Code")
+        if error_code is not None:
+            del response.headers["X-ZGLab-Internal-Error-Code"]
+        log_http_request(
+            logger,
+            request_id=request_id,
+            path=request.url.path,
+            latency_ms=(perf_counter() - started) * 1000,
+            status=response.status_code,
+            error_code=error_code,
+        )
+        return response
+
     # Request body size limit middleware
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
@@ -177,7 +232,7 @@ def create_app(
         ):
             content_length = request.headers.get("content-length")
             if content_length and int(content_length) > settings.api_max_request_body_bytes:
-                request_id = str(uuid.uuid4())
+                request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
                 return _error_response(
                     request_id,
                     PublicErrorCode.INVALID_REQUEST,
@@ -189,7 +244,7 @@ def create_app(
     # Exception handlers for consistent error envelope
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
-        request_id = str(uuid.uuid4())
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         return _error_response(
             request_id,
             PublicErrorCode.INVALID_REQUEST,
@@ -199,7 +254,7 @@ def create_app(
 
     @app.exception_handler(ValidationError)
     async def pydantic_validation_handler(request: Request, exc: ValidationError):
-        request_id = str(uuid.uuid4())
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         return _error_response(
             request_id,
             PublicErrorCode.INVALID_REQUEST,
@@ -210,7 +265,7 @@ def create_app(
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         # Log the actual error for debugging, but return a safe response
-        logger.exception("Unhandled exception in API request")
+        logger.error("unhandled_api_exception error_code=INTERNAL_ERROR")
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         return _error_response(
             request_id,
@@ -224,6 +279,13 @@ def create_app(
     def health() -> dict[str, str]:
         """Lightweight liveness check. Does not load models or call LLM."""
         return {"status": "ok", "version": __version__}
+
+    @app.get("/ready", response_model=None)
+    def ready() -> dict[str, str] | JSONResponse:
+        """Readiness check: startup, index access, embedding and LLM config passed."""
+        if getattr(app.state, "ready", False):
+            return {"status": "ready", "version": __version__}
+        return JSONResponse(status_code=503, content={"status": "not_ready"})
 
     @app.get("/sources")
     def list_public_sources() -> list[dict[str, object]]:
@@ -252,7 +314,7 @@ def create_app(
         enforces public-only retrieval, fixed retrieval mode, and
         server-controlled top_k.
         """
-        request_id = str(uuid.uuid4())
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         request.state.request_id = request_id
         settings = app.state.settings
         runtime = app.state.runtime
@@ -296,23 +358,23 @@ def create_app(
             result = future.result(timeout=settings.api_request_timeout_seconds)
             response = _map_result_to_response(result, request_id)
         except FuturesTimeoutError:
-            logger.warning("Generation timeout for request %s", request_id)
+            logger.warning("request_id=%s error_code=GENERATION_TIMEOUT", request_id)
             return _error_response(
                 request_id,
                 PublicErrorCode.GENERATION_TIMEOUT,
                 "Request timed out; please retry later",
                 status_code=504,
             )
-        except ProviderFailure as exc:
-            logger.warning("Provider failure for request %s: %s", request_id, exc)
+        except ProviderFailure:
+            logger.warning("request_id=%s error_code=PROVIDER_UNAVAILABLE", request_id)
             return _error_response(
                 request_id,
                 PublicErrorCode.PROVIDER_UNAVAILABLE,
                 "Answer service is temporarily unavailable",
                 status_code=503,
             )
-        except GenerationError as exc:
-            logger.warning("Generation error for request %s: %s", request_id, exc)
+        except GenerationError:
+            logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
             return _error_response(
                 request_id,
                 PublicErrorCode.INTERNAL_ERROR,
@@ -321,7 +383,7 @@ def create_app(
             )
         except Exception:
             # Catch any other exception and return a safe error response
-            logger.exception("Unexpected error in generation for request %s", request_id)
+            logger.error("request_id=%s error_code=INTERNAL_ERROR", request_id)
             return _error_response(
                 request_id,
                 PublicErrorCode.INTERNAL_ERROR,
@@ -329,11 +391,6 @@ def create_app(
                 status_code=500,
             )
 
-        logger.info(
-            "request_id=%s path=/api/v1/ask question_length=%d",
-            request_id,
-            len(question),
-        )
         return response
 
     @app.post("/api/v1/ask/stream")
@@ -352,7 +409,7 @@ def create_app(
         PROVIDER_UNAVAILABLE / INTERNAL_ERROR) are emitted as SSE `error`
         events.
         """
-        request_id = str(uuid.uuid4())
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         request.state.request_id = request_id
         settings = app.state.settings
         runtime = app.state.runtime
@@ -413,11 +470,18 @@ def create_app(
 def _get_client_id(request: Request) -> str:
     """Extract client identity for rate limiting.
 
-    Currently uses request.client.host. In production behind a trusted
-    proxy, this should use X-Forwarded-For (Phase 10).
+    `X-Forwarded-For` is trusted only when the direct peer is an explicitly
+    configured reverse proxy. This prevents a public caller from choosing its
+    own rate-limit identity.
     """
-    if request.client:
-        return request.client.host
+    peer = request.client.host if request.client else None
+    if peer and peer in request.app.state.settings.api_trusted_proxy_ips:
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        first = forwarded_for.split(",", maxsplit=1)[0].strip()
+        if first:
+            return first
+    if peer:
+        return peer
     return "unknown"
 
 
@@ -460,7 +524,7 @@ def _preflight_controls(
     try:
         limiter.check(client_id)
     except RateLimitExceededError as exc:
-        logger.warning("Rate limit exceeded for client %s", client_id)
+        logger.warning("rate_limit_exceeded error_code=RATE_LIMITED")
         return question, _error_response(
             request_id,
             PublicErrorCode.RATE_LIMITED,
@@ -472,7 +536,7 @@ def _preflight_controls(
     try:
         guard.acquire()
     except ServiceBusyError:
-        logger.warning("Service busy: all concurrent request slots occupied")
+        logger.warning("service_busy error_code=SERVICE_BUSY")
         return question, _error_response(
             request_id,
             PublicErrorCode.SERVICE_BUSY,
@@ -493,7 +557,8 @@ def _execute_generation(
     loop. The optional progress observer is forwarded to the service; the
     non-stream endpoint always passes None.
     """
-    # If no runtime was injected, use the lazy production runtime
+    # Tests may inject a runtime; production runtime has already been
+    # initialized by the application lifespan before serving requests.
     if runtime is None:
         runtime = _get_runtime()
 
@@ -547,7 +612,7 @@ async def _stream_events(
     while True:
         now = loop.time()
         if now >= deadline:
-            logger.warning("Generation timeout for stream request %s", request_id)
+            logger.warning("request_id=%s error_code=GENERATION_TIMEOUT", request_id)
             yield _sse_error_event(
                 request_id,
                 PublicErrorCode.GENERATION_TIMEOUT,
@@ -579,21 +644,21 @@ async def _stream_events(
     exc = future.exception()
     if exc is not None:
         if isinstance(exc, ProviderFailure):
-            logger.warning("Provider failure for stream request %s: %s", request_id, exc)
+            logger.warning("request_id=%s error_code=PROVIDER_UNAVAILABLE", request_id)
             yield _sse_error_event(
                 request_id,
                 PublicErrorCode.PROVIDER_UNAVAILABLE,
                 "Answer service is temporarily unavailable",
             )
         elif isinstance(exc, GenerationError):
-            logger.warning("Generation error for stream request %s: %s", request_id, exc)
+            logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
             yield _sse_error_event(
                 request_id,
                 PublicErrorCode.INTERNAL_ERROR,
                 "An error occurred while generating the answer",
             )
         else:
-            logger.exception("Unexpected error in stream request %s", request_id)
+            logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
             yield _sse_error_event(
                 request_id,
                 PublicErrorCode.INTERNAL_ERROR,
@@ -603,16 +668,16 @@ async def _stream_events(
 
     try:
         completed = _map_result_to_response(future.result(), request_id)
-    except ProviderFailure as exc:
-        logger.warning("Provider failure for stream request %s: %s", request_id, exc)
+    except ProviderFailure:
+        logger.warning("request_id=%s error_code=PROVIDER_UNAVAILABLE", request_id)
         yield _sse_error_event(
             request_id,
             PublicErrorCode.PROVIDER_UNAVAILABLE,
             "Answer service is temporarily unavailable",
         )
         return
-    except GenerationError as exc:
-        logger.warning("Generation error for stream request %s: %s", request_id, exc)
+    except GenerationError:
+        logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
         yield _sse_error_event(
             request_id,
             PublicErrorCode.INTERNAL_ERROR,
@@ -620,7 +685,7 @@ async def _stream_events(
         )
         return
     except Exception:
-        logger.exception("Unexpected error in stream request %s", request_id)
+        logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
         yield _sse_error_event(
             request_id,
             PublicErrorCode.INTERNAL_ERROR,
@@ -698,7 +763,7 @@ def _error_response(
         request_id=request_id,
         error=PublicErrorDetail(code=code, message=message),
     )
-    headers = {}
+    headers = {"X-ZGLab-Internal-Error-Code": code.value}
     if retry_after is not None:
         headers["Retry-After"] = str(int(retry_after) + 1)
     return JSONResponse(
@@ -708,13 +773,13 @@ def _error_response(
     )
 
 
-# Production app instance
-# The runtime is lazily initialized on first request to allow tests to inject fakes.
+# Production app instance. The lifespan eagerly initializes this runtime;
+# `_get_runtime` only retains a safe fallback for direct internal use.
 _runtime: ProductionRuntime | None = None
 
 
 def _get_runtime() -> ProductionRuntime:
-    """Get or create the production runtime (lazy initialization)."""
+    """Return the production runtime, creating it for direct internal use."""
     global _runtime
     if _runtime is None:
         from zglab_rag.api.runtime import ProductionRuntime
@@ -722,6 +787,6 @@ def _get_runtime() -> ProductionRuntime:
     return _runtime
 
 
-# For production, we use a lazy runtime that initializes on first request.
+# Production startup initializes dependencies before the app accepts traffic.
 # Tests should use create_app(runtime=fake_runtime) instead.
 app = create_app()

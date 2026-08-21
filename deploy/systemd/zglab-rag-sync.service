@@ -1,0 +1,24 @@
+[Unit]
+Description=Synchronize configured ZGLab RAG knowledge sources
+After=network-online.target zglab-rag-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# systemd runs this unit as root only to restart the API after a successful
+# sync. The actual indexing process remains the unprivileged zglab user.
+WorkingDirectory=/opt/zglab-rag/app
+EnvironmentFile=/opt/zglab-rag/.env
+Environment=ZGLAB_RAG_DATA_DIR=/opt/zglab-rag/runtime
+Environment=ZGLAB_RAG_DATABASE_PATH=/opt/zglab-rag/runtime/knowledge.db
+Environment=ZGLAB_RAG_BACKUP_DIR=/opt/zglab-rag/runtime/backups
+Environment=ZGLAB_RAG_SOURCES_CONFIG=/opt/zglab-rag/app/config/sources.yaml
+Environment=HF_ENDPOINT=https://hf-mirror.com
+Environment=HF_HUB_OFFLINE=1
+Environment=PYTHONPATH=/opt/zglab-rag/app/src
+ExecStart=/usr/sbin/runuser -u zglab -- /opt/zglab-rag/app/.venv/bin/python -m zglab_rag.cli sync apply
+ExecStartPost=/usr/bin/systemctl try-restart zglab-rag-api.service
+TimeoutStartSec=900
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/zglab-rag/runtime /opt/zglab-rag/models

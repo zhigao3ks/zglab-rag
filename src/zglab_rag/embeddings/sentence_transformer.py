@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
@@ -31,7 +32,16 @@ ModelFactory = Callable[[str, str], SentenceTransformerModel]
 def _default_model_factory(model_name: str, device: str) -> SentenceTransformerModel:
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(model_name, device=device)
+    # Production pins approved model snapshots in the local HF cache. Resolving
+    # the snapshot ourselves keeps startup offline after deployment and avoids a
+    # first-request network dependency; the configured model name and embedding
+    # behaviour remain unchanged.
+    model_reference = model_name
+    if os.environ.get("HF_HUB_OFFLINE") == "1" and "/" in model_name:
+        from huggingface_hub import snapshot_download
+
+        model_reference = snapshot_download(model_name, local_files_only=True)
+    return SentenceTransformer(model_reference, device=device)
 
 
 def ensure_device_available(device: str) -> None:

@@ -17,6 +17,9 @@ dependencies = [
   "uvicorn[standard]",
 ]
 
+[project.scripts]
+zglab-rag = "zglab_rag.cli:main"
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

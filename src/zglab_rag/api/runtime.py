@@ -86,3 +86,18 @@ class ProductionRuntime:
             self.llm_provider,
             settings=self.settings,
         )
+
+    def verify_ready(self) -> None:
+        """Verify dependencies required before accepting public requests.
+
+        The embedding provider has already been constructed during startup. This method
+        checks the persistent index with a read-only connection and validates that the
+        LLM configuration is complete without making an external provider request.
+        """
+        if not self.settings.llm_provider_configured:
+            raise RuntimeError("LLM provider configuration is incomplete")
+        connection = self.database.connect(read_only=True, initialize=False)
+        try:
+            self.database.versions(connection)
+        finally:
+            connection.close()

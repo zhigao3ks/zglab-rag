@@ -128,7 +128,8 @@ Phase 9D 完成全系统产品验收（End-to-End Integration & Product Acceptan
 - 验收记录见 [`docs/evaluations/phase-9-product-acceptance.md`](docs/evaluations/phase-9-product-acceptance.md)。
 
 **Phase 9 — Public Assistant Product Layer 已完成（9A/9B/9C/9D）；
-Phase 10 是下一阶段。**
+Phase 10 的运行时、备份、同步 CLI 与部署资产已实现，公网 HTTPS 验收取决于
+`ask.zglab.fun` 的 DNS 记录。**
 
 Phase 11（待实现）冻结新产品能力 **External Research & Session Evidence**（外部研究
 与临时会话知识）：当 Personal Knowledge Base 证据不足时，通过 Web Research Skill
@@ -158,7 +159,7 @@ Phase 6  Lexical / Hybrid Evaluation         ✅
 Phase 7  Reranker Evaluation                 ✅
 Phase 8  Grounded Generation                 ✅
 Phase 9  Public Assistant Product Layer       ✅
-Phase 10 Production Sync & Deployment         （下一阶段）
+Phase 10 Production Sync & Deployment         🟡（等待 DNS/HTTPS 验收）
 Phase 11 External Research & Session Evidence
 ```
 

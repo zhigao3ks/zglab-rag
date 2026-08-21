@@ -571,24 +571,27 @@ API Error Model 统一公网错误语义（`INVALID_REQUEST` / `RATE_LIMITED` /
 `SERVICE_BUSY` / `GENERATION_TIMEOUT` / `PROVIDER_UNAVAILABLE` / `INTERNAL_ERROR`）；
 `insufficient_evidence` 不是系统异常，而是正常业务结果。
 
-## 17. Phase 10 — Production Sync & Deployment 架构方向
+## 17. Phase 10 — Production Sync & Deployment
 
 Phase 10 让 Phase 9 的产品能够持续更新知识 + 稳定运行在生产服务器。Phase 10 不增加
 新的 RAG 算法能力。
 
+状态：运行时、同步、备份与部署资产已实现；公网 HTTPS 验收等待 `ask.zglab.fun` DNS。
+
 Production Runtime Layout：
 
 ```text
-/opt/zglab-rag/           application code
-/opt/zglab-sources/       notes/ zglab-website/ resume-tailor-agent/ ...
-/var/lib/zglab-rag/       knowledge.db  models/  cache/
-/var/log/zglab-rag/       application logs  sync logs
-/etc/zglab-rag/           production env
+/opt/zglab-rag/app/       application code
+/opt/zglab-rag/notes/     registered source checkout
+/opt/zglab-rag/runtime/   knowledge.db  backups/  logs/
+/opt/zglab-rag/models/    Hugging Face cache
+/opt/zglab-rag/.env       production env
+/var/www/zglab-assistant/ Vue build output
 ```
 
 Source Sync Layer 与 Source Adapter 分离：Phase 2 的 `LocalGitSource` 继续保持
-read-only；新增 Sync Layer 负责 remote revision check / `git fetch` /
-fast-forward。Incremental Reindex Pipeline 复用 Phase 4 的 Index Planner：
+read-only；`sources.sync` 只会对已注册 Git checkout 执行 `git fetch` 与
+fast-forward-only merge。Incremental Reindex Pipeline 复用 Phase 4 的 Index Planner：
 `revision unchanged → skip`；`revision changed → ingestion → chunk diff →
 new/changed/unchanged/deleted → only embed new+changed → vector update →
 FTS update → atomic apply`。Source sync failure ≠ Serving failure——同步失败
@@ -596,12 +599,14 @@ FTS update → atomic apply`。Source sync failure ≠ Serving failure——同�
 
 Production Service 保持轻量 `Internet → Nginx → FastAPI/Uvicorn →
 SQLite + sqlite-vec → local BGE → external LLM API`。服务：
-`zglab-rag.service`；同步：`zglab-rag-sync.service` + `zglab-rag-sync.timer`。
+`zglab-rag-api.service`；备份：`zglab-rag-backup.service` + timer；同步：
+`zglab-rag-sync.service` + `zglab-rag-sync.timer`。
 当前 2C2G 环境不引入 Kubernetes / Redis / Celery / Kafka / Milvus / Qdrant /
 Elasticsearch——除非未来有明确需求。
 
-Health / Readiness：`GET /health`（进程正常）与 `GET /ready`（核心依赖可服务：
-database、sqlite-vec、embedding profile、generation config）。
+Health / Readiness：`GET /health`（进程正常）与 `GET /ready`（runtime 已初始化、
+database/sqlite-vec 可访问、Embedding Provider 已加载、LLM config 完整）。完整目录、
+Nginx、备份与恢复说明见 `docs/production-architecture.md`。
 
 Lightweight Observability 至少记录 `request_id` / `status` / retrieval latency /
 generation latency / total latency / provider status / token usage（如果可得）/

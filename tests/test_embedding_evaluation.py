@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,6 +16,7 @@ from zglab_rag.embeddings.config import (
 from zglab_rag.embeddings.sentence_transformer import (
     BGE_ZH_QUERY_INSTRUCTION,
     SentenceTransformerEmbeddingProvider,
+    _default_model_factory,
 )
 from zglab_rag.evaluation.benchmark import run_embedding_benchmark
 from zglab_rag.evaluation.composition import TextComposition, compose_document_text
@@ -263,6 +266,30 @@ def test_sentence_transformer_adapter_separates_query_and_document_modes(
     assert model.query_calls[0][0] == [expected_query]
     assert model.query_calls[0][1].get("prompt_name") == expected_prompt
     assert model.max_seq_length == 512
+
+
+def test_offline_model_factory_resolves_cached_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name: str, *, device: str) -> None:
+            calls.append((model_name, device))
+
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(snapshot_download=lambda name, local_files_only: "/models/bge"),
+    )
+
+    _default_model_factory("BAAI/bge-small-zh-v1.5", "cpu")
+
+    assert calls == [("/models/bge", "cpu")]
 
 
 class FakeEmbeddingProvider:

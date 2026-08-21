@@ -283,17 +283,17 @@ Phase 9 视为冻结。
 
 ## Phase 10 — Production Sync & Deployment
 
-状态：待实现。
+状态：运行时 hardening、备份、受控 Git fast-forward、增量 sync CLI、systemd/Nginx 部署
+资产已经实现。
 
 核心目标：让 Phase 9 的产品能够持续更新知识 + 稳定运行在生产服务器。Phase 10 不增加
 新的 RAG 算法能力。
 
 实现内容：
 
-1. **Source Sync Layer**：Phase 2 的 `LocalGitSource` 继续保持 read-only；新增
-   Sync Layer 负责 remote revision check / `git fetch` / fast-forward / revision
-   before-after。原则：Sync Layer 负责更新 checkout，Source Adapter 只负责读取
-   checkout。
+1. **Source Sync Layer**：Phase 2 的 `LocalGitSource` 保持 read-only；`zglab-rag sync
+   apply` 只对注册 Git checkout 执行 `git fetch --prune` 和 fast-forward-only merge，输出
+   before/after revision。脏工作区或任何同步失败会在 ingestion 前停止，旧 index 不受影响。
 2. **Incremental Reindex Pipeline**：最终生产链路：`revision unchanged → skip`；
    `revision changed → ingestion → chunk diff → new/changed/unchanged/deleted →
    only embed new+changed → vector update → FTS update → atomic apply`。复用
@@ -302,17 +302,18 @@ Phase 9 视为冻结。
    提供问答。
 3. **Production Runtime Layout**：
    ```text
-   /opt/zglab-rag/           application code
-   /opt/zglab-sources/       notes/ zglab-website/ resume-tailor-agent/ ...
-   /var/lib/zglab-rag/       knowledge.db  models/  cache/
-   /var/log/zglab-rag/       application logs  sync logs
-   /etc/zglab-rag/           production env
+   /opt/zglab-rag/app/       application code
+   /opt/zglab-rag/runtime/   knowledge.db  backups/  logs/
+   /opt/zglab-rag/models/    model cache
+   /opt/zglab-rag/.env       production env
+   /var/www/zglab-assistant/ Vue build output
    ```
    禁止把 `knowledge.db`、models、source checkouts、runtime cache 长期放在
    Git checkout 中。
 4. **Production Service**：保持轻量 `Internet → Nginx → FastAPI/Uvicorn →
    SQLite + sqlite-vec → local BGE → external LLM API`。服务：
-   `zglab-rag.service`；同步：`zglab-rag-sync.service` + `zglab-rag-sync.timer`。
+   `zglab-rag-api.service`；备份：`zglab-rag-backup.service` + timer；同步：
+   `zglab-rag-sync.service` + `zglab-rag-sync.timer`。
    当前 2C2G 环境不引入 Kubernetes / Redis / Celery / Kafka / Milvus / Qdrant /
    Elasticsearch——除非未来有明确需求。
 5. **Health / Readiness**：`GET /health`（进程正常）与 `GET /ready`（核心依赖
@@ -321,6 +322,9 @@ Phase 9 视为冻结。
    retrieval latency / generation latency / total latency / provider status /
    token usage（如果可得）/ repair attempts / insufficient count / error category。
    禁止记录 API Key、完整 private evidence、secret、未经必要处理的敏感 Prompt。
+
+详细生产说明见 `docs/production-architecture.md`；公网验收矩阵见
+`docs/evaluations/phase-10-production-acceptance.md`。
 
 ## Phase 11 — External Research & Session Evidence
 
