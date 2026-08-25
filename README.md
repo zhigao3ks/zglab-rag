@@ -1,178 +1,137 @@
 # ZGLab RAG
 
-ZGLab RAG 是面向个人公开知识与项目经历的 Personal Knowledge Assistant。
+ZGLab RAG 已从最初的 Personal Knowledge Assistant 演进为 **ZGLab Personal AI Agent** 的知识与安全基础。
 
-它不是单纯的 Notes 搜索器，而是以黄志高的公开身份、项目、技术知识与实践经验为知识基础，通过 Evidence-Grounded RAG 对外进行介绍、解释与分享。
+当前生产版本已经完成以个人公开身份、项目、技术知识与实践经验为知识基础的 Evidence-Grounded RAG，
+并部署在：
 
-## 目标
+- `https://ask.zglab.fun`
 
-系统最终应能够回答：
+系统回答可以采用第一人称，但任何事实性陈述都必须由可追溯、允许公开的 Evidence 支撑。
+Persona 只影响表达方式，不允许覆盖事实边界。
 
-- 我是谁、研究和工程方向是什么；
-- 我做过哪些项目，以及项目为什么这样设计；
-- 某个项目的具体架构、技术选择、问题与经验；
-- Notes 中沉淀的技术知识、问题复盘与方法论；
-- 公开经历、论文、竞赛与其他可分享信息。
+## 当前能力
 
-回答采用第一人称表达，但事实必须由可追溯的公开证据支撑。系统不得因为 Persona 而自由补充不存在的经历、指标或项目事实。
+Phase 0–10 已完成：
 
-## 架构原则
+- Markdown / Local Git knowledge ingestion；
+- `config/sources.yaml` 驱动的公开知识源注册；
+- 结构感知 Chunking 与稳定 document/chunk ID；
+- BGE Embedding benchmark；
+- SQLite + `sqlite-vec` 持久化 Vector Index；
+- FTS5 lexical retrieval 与 RRF Hybrid evaluation；
+- CrossEncoder Reranker evaluation；
+- Evidence-Grounded Generation；
+- claim-level Citation Validation；
+- Public API v1；
+- SSE 状态流；
+- Vue 3 Web Assistant；
+- Nginx / HTTPS / systemd；
+- 增量 Git source sync；
+- SQLite 原子备份与恢复；
+- Phase 9 / Phase 10 产品与生产验收。
 
-1. **Evidence before Persona**：先检索证据，再以第一人称组织回答。
-2. **Public boundary first**：公网助手只能访问明确标记为 `public` 的知识源。
-3. **Source registry driven**：知识源通过 `config/sources.yaml` 注册，不把数据源硬编码进业务逻辑。
-4. **Retrieval is replaceable**：Embedding、BM25、Vector Store、Reranker 都通过独立边界接入，便于评测和替换。
-5. **Do not index everything**：GitHub 仓库只索引精选 README / docs / Markdown，不默认索引源码、构建产物或依赖文件。
-6. **Evaluation before optimization**：每次替换 Chunk、Embedding、Reranker 或融合策略都应可比较评测。
-7. **Runtime data is not source code**：数据库、模型缓存、索引、日志与密钥不得提交到 Git。
+当前生产索引约 1,058 个 Chunk，`knowledge.db` 约 9.6 MiB。生产环境稳定 RSS 约 439 MiB，
+API / SSE / Vue SPA / Sources / insufficient-evidence 均已完成公网验证。
 
-## 当前阶段
+## 核心原则
 
-当前进入 `Phase 8 - grounded generation and citation`：
+1. **Evidence before Persona**：先证据，后第一人称表达。
+2. **Public boundary first**：当前知识检索始终强制 `visibility=public`。
+3. **Source registry driven**：正式知识源只从 `config/sources.yaml` 获取。
+4. **Replaceable AI components**：Embedding、Vector、Lexical、Reranker、LLM 通过独立边界接入。
+5. **Evaluation before optimization**：算法替换必须有可比较评测。
+6. **Runtime data is not source code**：数据库、模型、缓存、日志、Secret 不进入 Git。
+7. **Security before capability expansion**：新增 Web Research / MCP / Agent 之前先建立认证、授权和成本边界。
 
-- 从 `config/sources.yaml` 解析已注册的本地 Markdown 与本地 Git repository；
-- Git source 通过显式 `local_path` 和 include allowlist 获取文档；
-- exclude 规则优先，文件顺序、document/chunk ID 与 provenance 保持稳定；
-- Git Adapter 只读取本地 checkout 和 HEAD revision，不负责 clone、pull 或 fetch；
-- 候选 Embedding 模型由 `config/embedding-models.yaml` 注册；
-- `evaluation/retrieval.yaml` 保存 50 条可追踪到 section 的检索标注；
-- Phase 3 benchmark 仍使用全量 chunk 的内存 cosine，评测输入保持不变；
-- `runtime/knowledge.db` 使用普通 SQLite 表持久化 source、document、chunk、embedding
-  profile 与 index run；
-- `sqlite-vec==0.1.9` 的 vec0 表只保存与 `chunks.id` 对应的 512 维 BGE 向量；
-- 增量 planner 按 `chunk_id + embedding_input_hash + embedding_profile_id` 区分
-  new/changed/unchanged/deleted，重复 build 不会重新计算未变化向量；
-- embedding 在事务外完成，验证成功后才在短事务中原子更新 metadata、vector 与 source snapshot。
-- 正式 `VectorRetriever` 只读持久化 index，默认且强制执行 public visibility；
-- 支持 source/scope filter、受控 over-fetch、profile validation 与可观测 latency；
-- Phase 5 复用 Phase 3 数据集，通过真实 SQLite + sqlite-vec 链路报告 Recall、HitRate、MRR。
-- schema v2 增加 SQLite FTS5 trigram index，`rowid` 与 `chunks.id` 一致；
-- `LexicalRetriever` 以关系表强制 public/source/scope filter；
-- `HybridRetriever` 以配置化 RRF 融合 vector/lexical rank，不混合不同 score 尺度；
-- 当前同一评测集上的 Hybrid 低于 Vector，因此默认仍为 `vector`。
-- Phase 7 新增独立 `RerankerProvider` 和 Vector Top-N → CrossEncoder 重排管线；
-- 候选模型注册在 `config/reranker-models.yaml`，主候选是
-  `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`，CPU/Torch、candidate_k=20；
-- 结果保留 original vector rank/score 与 reranker rank/score，重排不能引入 Top-N 外 chunk；
-- 指定模型已通过 Hugging Face 镜像下载并完成真实 CPU benchmark；candidate_k=20 时
-  Recall@1 从 0.5213 提升到 0.6809，MRR 从 0.6532 提升到 0.7753；
-- 质量收益明确，但重排 CPU 中位延迟约 1.74 秒、进程峰值 RSS 约 1.49 GB，因此生产默认
-  仍为 `vector`，`reranked` 作为显式可选模式保留。
-- Phase 8 建立 Question → Retrieval → Evidence Context → External LLM → Grounded Answer
-  → Citation Validation 的确定性问答闭环；固定 workflow，不是 Agent loop；
-- 每次请求为 Evidence 分配短 ID（E1、E2…），LLM 只引用短 ID，系统校验后映射回
-  chunk_id / source_path / section_path；
-- 结构化生成采用 claim-level citation JSON；Citation 合法性、归属、覆盖率与
-  insufficient-evidence 规则全部由代码确定性校验，不依赖 Prompt 约束；
-- Context Budget 确定性截断：默认 top_k=5、最多 5 条 Evidence、6000 字符，只保留完整 chunk；
-- OpenAI-compatible `GenerationProvider` 通过 `.env` 配置 base_url / api_key / model，
-  Key 永不进入日志或诊断；语义修复重试最多 1 次；
-- 检索为空、模型判定不足或校验无法安全恢复时返回“当前公开知识库中没有足够信息回答这个问题”；
-- 独立评测集 `evaluation/generation.yaml`（22 条，含 3 条 hard negative）报告确定性
-  generation 指标；不修改 `evaluation/retrieval.yaml`。
-- 生产默认 Retriever 仍为 `vector`；`reranked` 仅在显式选择时加载。
+## Roadmap v2
 
-Phase 9A 实现公网 API 契约与安全边界：
-
-- `POST /api/v1/ask` 窄公网接口，只接受 `question`，服务端强制 `visibility=public`；
-- Public response 只包含 `request_id` / `status` / `answer` / `sources`，不泄露 chunk_id、
-  score、provider、diagnostics 等内部信息；
-- 统一错误 envelope（`INVALID_REQUEST` / `RATE_LIMITED` / `SERVICE_BUSY` /
-  `GENERATION_TIMEOUT` / `PROVIDER_UNAVAILABLE` / `INTERNAL_ERROR`），不暴露 traceback；
-- 进程内 Concurrency Guard（默认 1 并发）和 Rate Limiter（默认 10 req/min）防止过载；
-- Request body limit（16 KiB）、question length limit（1-1000 字符）、CORS allowlist；
-- 应用启动加载 BGE 模型，请求级别 SQLite connection，避免每请求重新加载模型；
-- CLI 与 HTTP API 共用 `application/runtime.py` 中的 factory，避免配置漂移；
-- 完整设计见 [`docs/public-api.md`](docs/public-api.md)。
-
-Phase 9B 新增状态 SSE（不是 raw token streaming）：
-
-- `POST /api/v1/ask/stream` 返回 `text/event-stream`，事件序列
-  `accepted → retrieving → generating → validating → completed`；
-- 最终 answer 仍经 structured generation → CitationValidator → deterministic
-  rendering 后在 `completed` 中一次性发送；阶段事件只携带 request_id + stage；
-- 与 `/api/v1/ask` 共用同一 request lifecycle（schema/限流/并发/timeout/
-  public-only）；pre-stream 错误返回普通 JSON，post-stream 错误以 SSE error
-  事件终止；
-- heartbeat（`: keep-alive`，默认 15s）不伪造 stage；客户端断开不提前释放
-  concurrency slot（slot 生命周期 = generation task 生命周期）；
-- thread → async bridge 使用 stdlib SimpleQueue + `loop.call_soon_threadsafe`，
-  不改变 Phase 8 同步 provider。
-
-Phase 9C 新增面向访客的 Web Assistant UI（`web/`）：
-
-- Vue 3 + Vite + TypeScript（Composition API），原生 / scoped CSS，无 UI 框架；
-- `POST /api/v1/ask/stream` 是 POST 端点，浏览器 `EventSource` 不可用，改用
-  fetch + ReadableStream + TextDecoder 与自实现的增量 SSE parser（跨 chunk 重组、
-  heartbeat comment 忽略、JSON.parse 禁用 eval）；
-- 阶段状态映射为访客文案（正在检索公开知识库 / 整理回答 / 核验引用），
-  最终回答在 `completed` 事件一次性展示并附 Sources；insufficient_evidence
-  作为正常业务结果展示，不是红色系统错误；
-- 全部 Vue text binding（无 v-html）防 XSS；会话仅内存态，不持久化、不随请求
-  发送历史、无 Conversation Memory；
-- pre-stream JSON 错误与 post-stream SSE error 均映射为安全中文文案 +
-  request_id；组件卸载时 AbortController 断开 fetch（不等于后端取消）；
-- 开发：`cd web && npm install && npm run dev`（Vite proxy `/api →
-  127.0.0.1:8000`）；单测 `npm run test:run`；构建 `npm run build`；
-  详见 [`web/README.md`](web/README.md)。
-
-Phase 9D 完成全系统产品验收（End-to-End Integration & Product Acceptance）：
-
-- 按 Acceptance Matrix（Public API / SSE Lifecycle / Grounded Generation /
-  Security / Web UX / Error Handling / Accessibility / Responsive / Runtime
-  Lifecycle / Regression）完成真实后端 + 真实浏览器验收，15 项 Acceptance Gate
-  全部通过；
-- Public API v1 契约冻结：`POST /api/v1/ask`、`POST /api/v1/ask/stream`、
-  public status、错误码与 SSE stages；Phase 11 未来的 `researching` /
-  `researched` 属于向后兼容扩展；
-- 验收记录见 [`docs/evaluations/phase-9-product-acceptance.md`](docs/evaluations/phase-9-product-acceptance.md)。
-
-**Phase 9 — Public Assistant Product Layer 已完成（9A/9B/9C/9D）；
-Phase 10 的运行时、备份、同步 CLI 与部署资产已实现，公网 HTTPS 验收取决于
-`ask.zglab.fun` 的 DNS 记录。**
-
-Phase 11（待实现）冻结新产品能力 **External Research & Session Evidence**（外部研究
-与临时会话知识）：当 Personal Knowledge Base 证据不足时，通过 Web Research Skill
-检索公网资料，转换为仅用于当前请求 / 临时 session 的 External Evidence，再经
-Grounded Generation + Citation Validation 返回带可验证外部来源引用的回答：
-
-- Personal Knowledge First：默认先用个人知识库，不每个问题都联网；
-- External Research 只是 `insufficient_evidence` 的 fallback，provider 故障、
-  timeout、限流等技术失败绝不触发联网；
-- Web Evidence 同样是 Evidence，必须经过 Citation Validation；外部 URL 只能来自
-  系统实际检索结果，LLM 不得生成或修改 citation URL；
-- 临时 Evidence 不写入 `knowledge.db`、长期 Embedding Index、Personal Profile 或
-  Notes；外部资料不自动成为个人事实（Persona ≠ Web Knowledge）；
-- 完整设计（eligibility policy、SSRF / Prompt Injection 边界、Phase 11A/11B 交付
-  计划）见 [`docs/web-research-skill.md`](docs/web-research-skill.md)。
-
-后续阶段：
+> **重要：自 2026-08-25 起，`docs/roadmap-v2.md` 是 Phase 11+ 的权威路线图。**
+>
+> 仓库历史上曾把 Web Research 冻结为 Phase 11。该技术设计本身仍有效，但编号已经顺延。
+> Phase 0–10 的历史编号、实现与验收不变。
 
 ```text
-Phase 0  Architecture                        ✅
-Phase 1  Markdown Ingestion                  ✅
-Phase 2  Knowledge Source Acquisition        ✅
-Phase 3  Embedding Evaluation                ✅
-Phase 4  Persistent Index Lifecycle          ✅
-Phase 5  Production Vector Retrieval         ✅
-Phase 6  Lexical / Hybrid Evaluation         ✅
-Phase 7  Reranker Evaluation                 ✅
-Phase 8  Grounded Generation                 ✅
-Phase 9  Public Assistant Product Layer       ✅
-Phase 10 Production Sync & Deployment         🟡（等待 DNS/HTTPS 验收）
-Phase 11 External Research & Session Evidence
+Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
+Phase 11    Authentication & Access Control             ← 当前阶段
+Phase 12    Agent Capability Foundation & Web Research
+Phase 13    MCP Tool Runtime
+Phase 14    Agent Orchestrator
+Phase 15    Session Context
+Phase 16    Owner Agent / Advanced Permissions
 ```
 
-Evaluation 不是独立 Phase，而是贯穿项目的基础设施：
-Phase 3 Embedding Evaluation → Phase 5 Vector Retrieval Evaluation →
-Phase 6 Hybrid Evaluation → Phase 7 Reranker Evaluation →
-Phase 8 Generation Evaluation → Phase 9/10/11 继续作为 regression / acceptance
-基础设施（Phase 11 新增独立 Research Evaluation）。
+完整新路线见 [`docs/roadmap-v2.md`](docs/roadmap-v2.md)。
 
-Post-v1 Optimization（性能、Reranker 优化、streaming、cache、monitoring、
-evaluation expansion、answerability 等）不作为独立 Phase 编号。Phase 11 是
-Product Capability Expansion，不是 Post-v1 Optimization；Post-v1 保持非编号
-优化轨道不变。
+## Phase 11 — Authentication & Access Control
+
+当前优先目标不是继续增加 Web Search，而是先给公网系统增加统一 Security Foundation。
+
+计划中的访问模型：
+
+```text
+ask.zglab.fun
+      │
+      ├── Public Landing / Project Showcase
+      │       └── 不触发外部 LLM / Search / MCP 消费
+      │
+      └── Authenticated Application
+              └── RAG + future Agent capabilities
+```
+
+Phase 11 冻结方向：
+
+- 不开放匿名注册；
+- 账号由管理员 CLI 创建和下发；
+- Admin Provisioning + Single-use Activation Token；
+- Argon2id password hashing；
+- Server-side Session + Secure HttpOnly Cookie；
+- Auth 数据使用独立 `auth.db`，不写入 `knowledge.db`；
+- Session / Activation Token 数据库只保存 hash；
+- CSRF / Origin 防护；
+- per-IP + per-identity login throttling；
+- per-user rate limit / daily quota；
+- 保留 Phase 9 的 concurrency / timeout / request-size / safe-error 防护；
+- Public Landing 与 `/health` / `/ready` 保持匿名可访问；
+- Phase 11 不实现 Web Research、MCP、Agent Planner、Conversation Memory。
+
+## Phase 12+ Agent 方向
+
+长期系统目标不是“RAG + 几个插件”，而是三类能力在统一 Agent Runtime 下组合：
+
+```text
+                    ZGLab Personal AI Agent
+                              │
+                     Agent Control Plane
+                              │
+             ┌────────────────┼────────────────┐
+             │                │                │
+             ▼                ▼                ▼
+      Personal Knowledge   Web Research      MCP Tools
+             │                │                │
+             ▼                ▼                ▼
+       knowledge.db        Public Web       Tool Runtime
+```
+
+- **Phase 12**：把现有 RAG 抽象为 PersonalKnowledgeSkill，并实现 request-scoped WebResearchSkill；
+- **Phase 13**：把适合机器调用的 `zglab-tools` 能力通过 MCP 暴露；
+- **Phase 14**：建立 Capability Registry、Router / Planner、Policy Engine、Bounded Executor；
+- **Phase 15**：再处理多轮 Session Context、Temporary Evidence Reuse、Tool Artifact Reuse；
+- **Phase 16**：Owner-only、private、write / destructive capability 与 step-up confirmation。
+
+Web Research 原冻结设计见 [`docs/web-research-skill.md`](docs/web-research-skill.md)。
+
+## 主要文档
+
+- [`docs/roadmap-v2.md`](docs/roadmap-v2.md)：Phase 11+ 权威路线图
+- [`docs/architecture.md`](docs/architecture.md)：Phase 0–10 RAG 基础架构与演进方向
+- [`docs/development-plan.md`](docs/development-plan.md)：按 Phase 的开发计划
+- [`docs/knowledge-model.md`](docs/knowledge-model.md)：知识模型与 public/private 边界
+- [`docs/generation-grounding.md`](docs/generation-grounding.md)：Grounding / Citation 设计
+- [`docs/public-api.md`](docs/public-api.md)：Phase 9 Public API v1 冻结记录
+- [`docs/web-research-skill.md`](docs/web-research-skill.md)：Phase 12 Web Research 设计
+- [`docs/production-architecture.md`](docs/production-architecture.md)：Phase 10 生产架构
+- [`docs/evaluations/phase-10-production-acceptance.md`](docs/evaluations/phase-10-production-acceptance.md)：生产验收记录
 
 ## 目录
 
@@ -181,42 +140,25 @@ zglab-rag/
 ├── AGENTS.md
 ├── README.md
 ├── pyproject.toml
-├── .env.example
-├── .gitignore
 ├── config/
-│   ├── embedding-models.yaml
-│   ├── reranker-models.yaml
-│   └── sources.yaml
 ├── evaluation/
-│   ├── retrieval.yaml
-│   └── generation.yaml
 ├── docs/
-│   ├── architecture.md
-│   ├── knowledge-model.md
-│   ├── generation-grounding.md
-│   ├── public-api.md
-│   ├── web-research-skill.md
-│   └── evaluations/（Phase 9 产品验收矩阵、Phase 7 reranker 评测等）
 ├── knowledge/
-│   └── identity/
-│       └── profile.md
 ├── web/
-│   ├── src/（Vue 3 + Vite + TypeScript 公网 UI）
-│   └── tests/（Vitest）
-├── src/
-│   └── zglab_rag/
-│       ├── api/
-│       ├── application/
-│       ├── domain/
-│       ├── embeddings/
-│       ├── evaluation/
-│       ├── ingestion/
-│       ├── indexing/
-│       ├── retrieval/
-│       ├── generation/
-│       ├── reranking/
-│       ├── storage/
-│       └── sources/
+├── deploy/
+├── src/zglab_rag/
+│   ├── api/
+│   ├── application/
+│   ├── domain/
+│   ├── embeddings/
+│   ├── evaluation/
+│   ├── generation/
+│   ├── indexing/
+│   ├── ingestion/
+│   ├── retrieval/
+│   ├── reranking/
+│   ├── sources/
+│   └── storage/
 └── tests/
 ```
 
@@ -226,196 +168,59 @@ zglab-rag/
 
 ```bash
 uv sync
+uv run pytest -q
+uv run ruff check .
 uv run uvicorn zglab_rag.api.main:app --reload
 ```
 
-健康检查：
+Web：
 
 ```bash
-curl http://127.0.0.1:8000/health
+cd web
+npm install
+npm test -- --run
+npm run build
+npm run dev
 ```
 
-验证本地 Markdown ingestion：
+## 现有检索与生成
 
-```bash
-uv run python -m zglab_rag.ingestion.cli knowledge/identity/profile.md
-```
-
-检查已注册的本地知识源：
-
-```bash
-uv run python -m zglab_rag.sources.cli list
-uv run python -m zglab_rag.sources.cli inspect notes
-```
-
-对一个已注册 source 执行 Markdown ingestion：
-
-```bash
-uv run python -m zglab_rag.ingestion.cli --source notes
-```
-
-这些命令不会执行 `git pull`、`git fetch` 或其他同步操作；repository 更新由未来独立的
-Sync Layer 或部署任务负责。
-
-Chunk 参数可通过 `ZGLAB_RAG_CHUNK_TARGET_SIZE`、
-`ZGLAB_RAG_CHUNK_MAX_SIZE` 和 `ZGLAB_RAG_CHUNK_OVERLAP` 配置。
-
-在 `identity-profile` 和 `notes` 的真实 chunk 上运行单个 benchmark：
-
-```bash
-uv run python -m zglab_rag.evaluation.embedding_benchmark \
-  --source identity-profile \
-  --source notes \
-  --model bge-small-zh-v1.5 \
-  --device cpu \
-  --composition contextual
-```
-
-`--all` 会运行所有 enabled model 与两种 document composition。运行结果写入已忽略的
-`artifacts/benchmarks/`；评测集和模型配置则纳入版本控制。显式请求 `cuda` 但 PyTorch
-无法使用 CUDA 时命令会报错，不会静默回退到 CPU。
-
-Benchmark 的 Recall@K 按 relevant section target 计算：同一超长 section 的任一二次切片
-命中即视为该 target 命中；多个 relevant target 分别计入 recall。`hard_negative` 在尚未定义
-相似度拒绝阈值的 Phase 3 中不进入 Recall/MRR 分母，并会作为 skipped query 记录。
-总指标输出 Recall@1/3/5/10/20/30 与 MRR，并按 scored query category 输出对应 breakdown。
-
-## 持久化 Knowledge Index
-
-默认数据库为已忽略的 `runtime/knowledge.db`，可用
-`ZGLAB_RAG_DATABASE_PATH` 覆盖。数据库初始化会加载 sqlite-vec、执行
-`select vec_version()` 并校验 schema version；扩展加载或版本不匹配会明确失败，不会退化为
-Python cosine。
-
-Phase 6 schema v2 migration 是显式操作。它保留 vec0，只从 canonical `chunks` 表回填 FTS：
-
-```bash
-uv run python -m zglab_rag.storage.migrations runtime/knowledge.db
-```
-
-迁移生产数据前应先在 `runtime/` 内建立可恢复备份；迁移不会运行 ingestion 或 embedding。
-
-```bash
-uv run python -m zglab_rag.indexing.cli status
-uv run python -m zglab_rag.indexing.cli plan \
-  --source identity-profile --source notes
-uv run python -m zglab_rag.indexing.cli build \
-  --source identity-profile --source notes
-uv run python -m zglab_rag.indexing.cli rebuild \
-  --source identity-profile --source notes
-uv run python -m zglab_rag.indexing.cli search \
-  "Agent 长期记忆和 Context 有什么区别？" --top-k 5
-```
-
-`plan` 是只读操作，不会创建数据库。`build` 只计算 new/changed chunks；模型、维度、
-composition、normalize 或 query mode 与 active profile 不一致时会拒绝写入。只有显式
-`rebuild` 可以替换 active profile，而且 profile 变化时必须覆盖所有已索引 source。
-`search` 只是验证 sqlite-vec 持久化 KNN 和 metadata 回表的 public-only smoke test，不是正式
-Retriever，也不包含 BM25、融合或 rerank。
-
-## Production Retrieval
-
-Phase 5 Vector baseline 与 Phase 6 Lexical/Hybrid 共用正式 CLI，默认 mode 仍为 vector：
+生产默认 Retriever 仍为 `vector`；Reranker 作为显式可选能力保留。
 
 ```bash
 uv run python -m zglab_rag.retrieval.cli search \
-  "Agent 长期记忆和 Context 有什么区别？" --mode vector --top-k 5 --debug
-
-uv run python -m zglab_rag.retrieval.cli search \
-  "generation fencing" --mode lexical --source notes --scope knowledge
-
-uv run python -m zglab_rag.retrieval.cli search \
-  "结构化 LLM 调用" --mode hybrid --debug
-
-uv run python -m zglab_rag.retrieval.cli search \
-  "Agent 长期记忆和 Context 有什么区别？" \
-  --mode reranked --candidate-k 20 --top-k 5 --debug \
-  --reranker-model-path runtime/models/mmarco-mMiniLMv2-L12-H384-v1
-
-uv run python -m zglab_rag.evaluation.retrieval_compare
-uv run python -m zglab_rag.evaluation.reranker_compare \
-  --candidate-k 10 --candidate-k 20 --candidate-k 30 \
-  --reranker-model-path runtime/models/mmarco-mMiniLMv2-L12-H384-v1
-```
-
-Retriever 默认 `top_k=5`、最大 50，且不提供 private CLI 开关。过滤采用受控 over-fetch：
-先从 vec0 取得不含业务 metadata 的 rowid/distance，再由关系查询强制校验 public、source 和
-scope；不足 top-k 时扩大候选集，直到补足、耗尽 index 或达到配置上限。Debug 只输出计数、
-filter 与 latency，不输出被过滤候选的 metadata。
-
-sqlite-vec 返回 cosine distance。对外结果统一定义 `score = 1 - distance`，因此 score 越高、
-distance 越低表示越相关。每次检索会验证 query provider、当前配置与数据库 active embedding
-profile 一致；不匹配时明确失败，不会 rebuild 或切换算法。
-
-正式 search 始终执行最大 top-k 限制。离线 evaluator 为了与 Phase 3 的完整排名 MRR 可比，
-会在评测进程内读取当前 corpus 的完整排名；这不会放宽 public CLI 的 top-k 配置。
-
-FTS5 使用 `tokenize='trigram'`。lexical profile 固定记录 tokenizer、config version 与 BM25
-列权重 `title/section/content = 1/1/1`。FTS5 `bm25()` raw value 越小越好；对外 lexical
-score 定义为 `-raw_bm25`，仅在 lexical 模式内比较。小于 3 个 Unicode 字符且没有可检索
-term 的查询会返回 `lexical_not_applicable`，Hybrid 此时只使用 vector。
-
-Hybrid 默认候选池各 50，RRF 参数为 `k=60`、`w_vector=w_lexical=1`，同分时依次使用最佳
-单路 rank 与 `chunk_id`。RRF、cosine 与 raw BM25 不可跨模式比较。
-
-Reranker passage 使用唯一的通用格式 `Title + Section + content`，CrossEncoder 按
-`(query, passage)` pair 输出 higher-is-better relevance score。正式结果不会覆盖 vector score；
-同分时按 original vector rank、再按 `chunk_id` 排序。candidate_k 仅允许 10/20/30，主要
-baseline 为 20。指定模型的 471 MB 权重通过 Hugging Face 镜像下载到 Git ignored 的
-`runtime/models/`，SHA-256 校验通过；没有替换模型、Embedding、chunking 或评测集。
-
-真实 benchmark 选择 candidate_k=20：与相同候选集的 Vector 排序相比，Recall@1/3/5
-分别从 0.5213/0.6809/0.7872 提升到 0.6809/0.7872/0.8404，MRR 从 0.6532 提升到
-0.7753，Recall@20 保持 0.9255。candidate_k=10 较快但质量较低；30 的延迟更高且 MRR
-低于 20。CPU 上 20 候选的重排中位延迟约 1.74 秒、模型加载约 2.70 秒、完整评测进程
-峰值 RSS 约 1.49 GB。质量验收通过，但当前 2C2G 生产预算偏紧，默认仍使用 Vector。
-完整指标、promotion/demotion、hard negatives、资源数据和 9 条人工 Query 记录见
-[`docs/evaluations/phase-7-reranker.md`](docs/evaluations/phase-7-reranker.md)。
-
-## Grounded Generation
-
-Phase 8 的问答闭环通过 generation CLI 使用，默认 retrieval mode 仍为 `vector`：
-
-```bash
-uv run python -m zglab_rag.generation.cli ask \
-  "Agent 长期记忆和 Context 有什么区别？"
+  "Agent 长期记忆和 Context 有什么区别？" --mode vector --top-k 5
 
 uv run python -m zglab_rag.generation.cli ask \
-  "你是谁？" --mode reranked --debug
+  "你做过哪些 Agent 项目？"
 ```
 
-LLM 通过 OpenAI-compatible endpoint 配置，真实 secret 只写在 Git ignored 的 `.env`：
+LLM 使用 OpenAI-compatible endpoint，真实 Key 只保存在 Git ignored 的 `.env` / 生产环境配置中。
 
-```bash
-ZGLAB_RAG_LLM_BASE_URL=https://...
-ZGLAB_RAG_LLM_API_KEY=...
-ZGLAB_RAG_LLM_MODEL=...
+## 生产部署
+
+Phase 10 已完成并验证：
+
+```text
+Internet
+   ↓ HTTPS
+ask.zglab.fun
+   ↓
+Nginx
+   ├── Vue SPA
+   └── FastAPI / SSE
+          ↓
+      local BGE
+      SQLite + sqlite-vec
+      external LLM
 ```
 
-未配置时 CLI 输出 `Generation provider not configured`，不产生 stack trace。回答采用
-claim-level citation：LLM 只能引用本次分配的短 Evidence ID（E1、E2…），每个 claim 必须
-带有效 citation，cited evidence 集合由 validated claim citations 并集确定性生成；最终
-用户可见回答由 validated claims 确定性渲染，provider 的 free-form answer 只作内部
-信息，不能绕过校验。Citation 格式、归属、覆盖率与 insufficient-evidence 规则由确定性
-校验器检查；校验失败最多修复重试 1 次，仍失败则安全返回拒答文本。检索为空或模型判定
-证据不足时回答“当前公开知识库中没有足够信息回答这个问题”，不设置基于 score 的拒答
-阈值。完整设计（Persona 边界、Prompt 注入边界、失败模型）见
-[`docs/generation-grounding.md`](docs/generation-grounding.md)。
-
-Generation 评测使用独立数据集，不修改 retrieval 评测集：
-
-```bash
-uv run python -m zglab_rag.evaluation.generation
-uv run python -m zglab_rag.evaluation.generation --retrieval-only
-```
-
-确定性指标包括 retrieval evidence hit、citation validity、citation coverage、
-should-answer correctness 与 insufficient-evidence correctness；hard negative 记录检索
-证据、score、生成决定与引用。结果写入 Git ignored 的 `artifacts/evaluation/`。
+systemd API、Nginx、备份 timer、同步 timer 均已投入生产。GitHub 出站网络异常时同步任务会安全失败，
+继续使用上一版可用索引提供服务。
 
 ## 安全边界
 
-默认禁止进入公网知识库：
+默认禁止进入当前公开知识库：
 
 - 公司内部仓库、客户资料、合同原文、内部接口文档；
 - Token、密码、SSH Key、Cookie、API Key；
@@ -423,4 +228,4 @@ should-answer correctness 与 insufficient-evidence correctness；hard negative 
 - 未明确允许公开的 private repository 内容；
 - 模型缓存、索引数据库、日志与临时文件。
 
-详见 `docs/knowledge-model.md` 与 `config/sources.yaml`。
+Phase 11 引入 Authentication **不代表** private knowledge 自动开放。Private / owner-only 能力必须在后续阶段单独设计。
