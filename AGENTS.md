@@ -4,21 +4,77 @@
 
 ## 1. Project Goal
 
-本项目构建 ZGLab Personal Knowledge Assistant。
+本项目已经完成 Personal Knowledge Assistant 的生产基础，并正在向 **ZGLab Personal AI Agent** 演进。
 
-系统面向公网访客，以黄志高的第一人称进行介绍、项目解释和知识分享，但任何事实性回答必须来自可追溯、允许公开的知识源。
+当前已完成的核心基础仍然是：系统以黄志高的公开身份、项目与技术知识为知识基座，通过
+Evidence-Grounded RAG 对外进行介绍、项目解释和知识分享；任何事实性回答必须来自可追溯、
+允许公开的知识源。
 
-核心原则：
+长期目标是在现有 RAG 基础上逐步增加：
+
+```text
+Personal Knowledge Skill
++ Web Research Skill
++ MCP Tool Runtime
++ Agent Orchestration
+```
+
+但不得提前实现未到达的 Phase。
+
+核心事实性原则继续保持：
 
 ```text
 Evidence
-→ Retrieval
+→ Retrieval / Research
 → Context
 → Grounded Generation
 → Citation
 ```
 
 Persona 只影响表达方式，不允许覆盖事实边界。
+
+## 1.1 Roadmap Authority（重要）
+
+自 **2026-08-25** 起，`docs/roadmap-v2.md` 是 **Phase 11 及以后阶段的权威路线图**。
+
+Phase 0–10 的历史编号、实现内容和验收记录保持不变。
+
+仓库历史上曾冻结：
+
+```text
+Phase 11 = External Research & Session Evidence
+```
+
+该编号已被新的 Roadmap supersede。Web Research 技术设计本身仍然有效，但现顺延到 Phase 12；
+Session Context 统一移动到 Phase 15。
+
+当前权威路线：
+
+```text
+Phase 0–10  Personal Knowledge Assistant Foundation     ✅
+Phase 11    Authentication & Access Control             ← 当前阶段
+Phase 12    Agent Capability Foundation & Web Research
+Phase 13    MCP Tool Runtime
+Phase 14    Agent Orchestrator
+Phase 15    Session Context
+Phase 16    Owner Agent / Advanced Permissions
+```
+
+如果以下内容出现冲突：
+
+- `README.md`
+- `docs/development-plan.md`
+- `docs/architecture.md`
+- `docs/public-api.md`
+- `docs/web-research-skill.md`
+- 历史 `docs/evaluations/*`
+- issue / comment / old prompt
+
+对于 **Phase 11+ 的编号与执行顺序**，必须以 `docs/roadmap-v2.md` 为准。
+
+历史 acceptance 文档中出现的 “future Phase 11” 只是当时的规划，不得据此开始开发 Web Research。
+
+当前在没有新的明确授权时，**不得实现 Web Research、MCP、Agent Planner、Session Memory 或 Owner Agent**。
 
 ## 2. Architectural Boundaries
 
@@ -30,6 +86,9 @@ Persona 只影响表达方式，不允许覆盖事实边界。
 - `generation/`：Context 构建、Prompt、LLM、引用；
 - `domain/`：与框架无关的数据模型；
 - `api/`：HTTP API，只负责协议层。
+
+Phase 11 起新增的 Auth / Agent 能力也必须保持独立边界，不得把身份认证、业务问答、检索和
+LLM 调用堆在同一个 service 中。
 
 禁止把 GitHub 拉取、Markdown 解析、Embedding、检索和 LLM 调用全部写在一个 service 中。
 
@@ -57,15 +116,16 @@ Persona 只影响表达方式，不允许覆盖事实边界。
 
 ## 4. Public / Private Boundary
 
-公网 API 的检索入口必须默认强制：
+现有知识检索入口必须继续强制：
 
 ```text
 visibility == public
 ```
 
-即使数据库中未来存在 private 文档，也不得因为召回分数较高而进入公网 Context。
+即使数据库中未来存在 private 文档，也不得因为召回分数较高而进入公开 Context。
 
-任何涉及 private 模式的能力都必须单独设计鉴权，不得复用公网默认行为隐式开放。
+Phase 11 引入登录不等于自动开放 private knowledge。任何 private mode 都必须在未来 Owner Agent /
+Advanced Permissions 阶段单独设计，不得复用公网默认行为隐式开放。
 
 ## 5. Factuality
 
@@ -83,8 +143,6 @@ visibility == public
 
 Embedding、Vector Store、BM25、Reranker、LLM 必须通过清晰接口隔离。
 
-第一阶段不要假设永久使用某个具体模型或框架。
-
 优先保留以下可替换能力：
 
 ```text
@@ -94,6 +152,8 @@ LexicalRetriever
 Reranker
 Generator
 ```
+
+未来 SearchProvider、MCP Client 与 Agent capability 也应遵循相同的可替换边界。
 
 不要让 LangChain/LlamaIndex 等框架类型泄漏到核心 Domain Model。
 
@@ -112,19 +172,23 @@ Generator
 
 禁止只凭主观体验宣布检索“变好了”。
 
+Evaluation 是跨 Phase 基础设施，不重新占用独立 Phase 编号。
+
 ## 8. Runtime Data
 
 以下内容不得提交到 Git：
 
 - `.env`
 - SQLite/Vector DB 数据库
+- Auth database / Session database
 - 模型权重与 Hugging Face cache
 - 索引文件
 - 运行日志
 - 临时抓取文件
-- API Key / Token / Cookie / SSH Key
+- API Key / Token / Cookie / Session Secret / Activation Token / SSH Key
 
-运行数据统一放在 Git ignored 的 `runtime/` 或生产环境 `/var/lib/zglab-rag/`。
+运行数据统一放在 Git ignored 的 `runtime/` 或生产环境 `/var/lib/zglab-rag/`、
+`/opt/zglab-rag/runtime/` 等既有生产 runtime 目录。
 
 ## 9. Local Development
 
@@ -154,7 +218,8 @@ uv run uvicorn zglab_rag.api.main:app --reload
 - 不修改其他 GitHub 仓库；
 - 不向 Notes / Website / Project repositories 写入内容；
 - 不创建或修改远端 release / tag；
-- 不执行破坏性 Git 操作。
+- 不执行破坏性 Git 操作；
+- 不主动部署生产服务器。
 
 读取外部公开知识源与写入外部仓库是两种不同权限。
 
@@ -163,12 +228,14 @@ uv run uvicorn zglab_rag.api.main:app --reload
 新增功能至少覆盖：
 
 - 正常路径；
-- visibility 边界；
-- 无证据/空召回；
+- visibility / authorization 边界；
+- 无证据/空召回（相关模块涉及时）；
 - 配置错误；
-- 重复 ingestion 或幂等行为（相关模块涉及时）。
+- 重复 ingestion、token single-use、session revoke 或其他幂等行为（相关模块涉及时）。
 
-任何公网检索测试都应包含“private 文档不会被返回”的断言。
+任何公开检索测试都应包含“private 文档不会被返回”的断言。
+
+任何认证/授权能力都必须由服务端测试证明，不能只依赖前端 route guard 或隐藏按钮。
 
 ## 12. Definition of Done
 
@@ -177,10 +244,11 @@ uv run uvicorn zglab_rag.api.main:app --reload
 1. 边界清楚；
 2. 配置可追踪；
 3. 有测试；
-4. 不泄露 private source；
+4. 不泄露 private source / credential；
 5. 不引入未经证明的事实；
 6. `ruff` 与 `pytest` 通过；
-7. README / docs 在架构变化时同步更新。
+7. README / docs 在架构变化时同步更新；
+8. 没有提前实现后续 Phase。
 
 ## 13. Documentation Language
 
