@@ -1,5 +1,11 @@
 # Phase 10 生产架构
 
+> Phase 11 补充：在本文档基础上，生产 runtime 新增独立 `auth.db`
+> （身份/会话/审计生命周期，与 knowledge.db 完全分离）、`zglab-rag backup
+> --auth` 备份与每日备份 unit 的第二条 ExecStart、Nginx 保守 CSP 头，以及
+> `/ready` 在 auth.db 不可用时判为 not ready。详见 `docs/authentication.md`
+> 与 `docs/evaluations/phase-11-authentication-acceptance.md` 的迁移章节。
+
 ## 1. 目标与边界
 
 生产环境以最少组件长期运行公开的 ZGLab Personal Knowledge Assistant：Nginx 提供 HTTPS 和

@@ -93,8 +93,12 @@ class ProductionRuntime:
         The embedding provider has already been constructed during startup. This method
         checks the persistent index with a read-only connection and validates that the
         LLM configuration is complete without making an external provider request.
+
+        With the Phase 11 LLM kill switch active the LLM configuration check is
+        skipped: the service stays ready for landing/login/auth while ask endpoints
+        refuse generation with SERVICE_DISABLED.
         """
-        if not self.settings.llm_provider_configured:
+        if self.settings.llm_enabled and not self.settings.llm_provider_configured:
             raise RuntimeError("LLM provider configuration is incomplete")
         connection = self.database.connect(read_only=True, initialize=False)
         try:

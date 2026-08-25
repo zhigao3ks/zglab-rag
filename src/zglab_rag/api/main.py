@@ -50,6 +50,12 @@ from pydantic import ValidationError
 from zglab_rag import __version__
 from zglab_rag.api.concurrency import ConcurrencyGuard, ServiceBusyError
 from zglab_rag.api.contracts import (
+    AuthActivateRequest,
+    AuthChangePasswordRequest,
+    AuthLoginRequest,
+    AuthResultResponse,
+    AuthSessionResponse,
+    AuthUserPublic,
     PublicAskRequest,
     PublicAskResponse,
     PublicErrorCode,
@@ -62,7 +68,28 @@ from zglab_rag.api.contracts import (
 )
 from zglab_rag.api.observability import log_http_request
 from zglab_rag.api.rate_limit import RateLimiter, RateLimitExceededError
+from zglab_rag.api.security import (
+    AuthRuntime,
+    get_client_id,
+    session_cookie_kwargs,
+    verify_state_change_origin,
+)
 from zglab_rag.api.sse import SSE_HEADERS, SSE_HEARTBEAT, encode_sse_event
+from zglab_rag.auth.audit import AuditLogger
+from zglab_rag.auth.errors import (
+    AccountUnavailableError,
+    CsrfError,
+    InvalidCredentialsError,
+    LoginThrottledError,
+    OriginError,
+    PasswordPolicyError,
+    QuotaExceededError,
+    SessionError,
+    TokenError,
+)
+from zglab_rag.auth.models import AuditEvent, AuthenticatedPrincipal
+from zglab_rag.auth.quota import UsageGuard
+from zglab_rag.auth.session import csrf_token_for
 from zglab_rag.config import Settings, get_settings
 from zglab_rag.generation.contracts import (
     GenerationResult,
@@ -119,6 +146,7 @@ def create_app(
     settings: Settings | None = None,
     concurrency_guard: ConcurrencyGuard | None = None,
     rate_limiter: RateLimiter | None = None,
+    auth_runtime: AuthRuntime | None = None,
 ) -> FastAPI:
     """Create the FastAPI application with optional dependency injection.
 
@@ -147,8 +175,13 @@ def create_app(
             if app.state.runtime is None:
                 # Fail-fast production startup: load embedding model and validate
                 # configuration before serving the first public request.
+                validate_production_security_settings(settings)
                 app.state.runtime = _get_runtime()
                 app.state.runtime.verify_ready()
+                # Phase 11: authentication is the foundation of every
+                # cost-bearing capability, so an unavailable auth.db means
+                # the service is not ready.
+                app.state.auth_runtime.verify_ready()
             app.state.ready = True
             logger.info("runtime_ready startup_ms=%.3f", (perf_counter() - started) * 1000)
         except Exception:
@@ -182,6 +215,7 @@ def create_app(
     # Store runtime and guards in app state for access in routes
     app.state.settings = settings
     app.state.runtime = runtime
+    app.state.auth_runtime = auth_runtime or AuthRuntime.from_settings(settings)
     app.state.concurrency_guard = concurrency_guard or ConcurrencyGuard(
         max_concurrent=settings.api_max_concurrent_requests
     )
@@ -225,10 +259,15 @@ def create_app(
     # Request body size limit middleware
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
-        # Only apply to the public ask endpoints
+        # Only apply to the cost-bearing / credential-carrying endpoints
         if request.method == "POST" and request.url.path in (
             "/api/v1/ask",
             "/api/v1/ask/stream",
+            "/api/v2/ask",
+            "/api/v2/ask/stream",
+            "/api/v2/auth/login",
+            "/api/v2/auth/activate",
+            "/api/v2/auth/change-password",
         ):
             content_length = request.headers.get("content-length")
             if content_length and int(content_length) > settings.api_max_request_body_bytes:
@@ -321,6 +360,19 @@ def create_app(
         guard: ConcurrencyGuard = app.state.concurrency_guard
         limiter: RateLimiter = app.state.rate_limiter
 
+        # Phase 11 v1 retirement: the frozen anonymous contract must stop
+        # being an anonymous LLM consumption entry once production migrates.
+        retired = _v1_retirement_response(settings, request_id)
+        if retired is not None:
+            return retired
+        if not settings.llm_enabled:
+            return _error_response(
+                request_id,
+                PublicErrorCode.SERVICE_DISABLED,
+                "The answer service is currently disabled",
+                status_code=503,
+            )
+
         # Shared request lifecycle with /api/v1/ask/stream: question length,
         # rate limit and concurrency acquire are identical for both endpoints.
         question, preflight_error = _preflight_controls(
@@ -348,50 +400,8 @@ def create_app(
         # SERVICE_BUSY instead of entering generation on top of it.
         future.add_done_callback(lambda _future: guard.release())
 
-        # Two independent deadline layers:
-        # - api_request_timeout_seconds caps the whole workflow (retrieval +
-        #   generation + validation); exceeding it returns GENERATION_TIMEOUT.
-        # - llm_timeout_seconds caps a single LLM provider call inside the
-        #   workflow; exceeding it surfaces as ProviderFailure and returns
-        #   PROVIDER_UNAVAILABLE. It is never mapped to INTERNAL_ERROR.
-        try:
-            result = future.result(timeout=settings.api_request_timeout_seconds)
-            response = _map_result_to_response(result, request_id)
-        except FuturesTimeoutError:
-            logger.warning("request_id=%s error_code=GENERATION_TIMEOUT", request_id)
-            return _error_response(
-                request_id,
-                PublicErrorCode.GENERATION_TIMEOUT,
-                "Request timed out; please retry later",
-                status_code=504,
-            )
-        except ProviderFailure:
-            logger.warning("request_id=%s error_code=PROVIDER_UNAVAILABLE", request_id)
-            return _error_response(
-                request_id,
-                PublicErrorCode.PROVIDER_UNAVAILABLE,
-                "Answer service is temporarily unavailable",
-                status_code=503,
-            )
-        except GenerationError:
-            logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
-            return _error_response(
-                request_id,
-                PublicErrorCode.INTERNAL_ERROR,
-                "An error occurred while generating the answer",
-                status_code=500,
-            )
-        except Exception:
-            # Catch any other exception and return a safe error response
-            logger.error("request_id=%s error_code=INTERNAL_ERROR", request_id)
-            return _error_response(
-                request_id,
-                PublicErrorCode.INTERNAL_ERROR,
-                "An unexpected error occurred",
-                status_code=500,
-            )
-
-        return response
+        # Two independent deadline layers; shared with /api/v2/ask.
+        return _collect_generation(settings, future, request_id)
 
     @app.post("/api/v1/ask/stream")
     async def ask_stream(
@@ -412,9 +422,21 @@ def create_app(
         request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
         request.state.request_id = request_id
         settings = app.state.settings
-        runtime = app.state.runtime
         guard: ConcurrencyGuard = app.state.concurrency_guard
         limiter: RateLimiter = app.state.rate_limiter
+
+        # Identical retirement / kill-switch / pre-stream lifecycle as
+        # /api/v1/ask; SSE never becomes a bypass of either policy.
+        retired = _v1_retirement_response(settings, request_id)
+        if retired is not None:
+            return retired
+        if not settings.llm_enabled:
+            return _error_response(
+                request_id,
+                PublicErrorCode.SERVICE_DISABLED,
+                "The answer service is currently disabled",
+                status_code=503,
+            )
 
         # Identical pre-stream lifecycle as /api/v1/ask. Reject with plain
         # JSON errors before opening the event stream.
@@ -424,26 +446,467 @@ def create_app(
         if preflight_error is not None:
             return preflight_error
 
-        # Thread -> async bridge. asyncio.Queue is not thread-safe, so the
-        # worker thread only touches a stdlib SimpleQueue and wakes the event
-        # loop via loop.call_soon_threadsafe.
-        loop = asyncio.get_running_loop()
-        bridge: queue.SimpleQueue[ProgressStage | object] = queue.SimpleQueue()
-        done_sentinel = object()
+        return await _open_ask_stream(app, request, question, request_id, settings)
 
-        def _progress(stage: ProgressStage) -> None:
-            # Runs in the generation worker thread.
-            loop.call_soon_threadsafe(bridge.put_nowait, stage)
+    # ------------------------------------------------------------------
+    # Phase 11: authenticated API v2
+    # ------------------------------------------------------------------
 
-        def _on_done(_future: Future) -> None:
-            # Runs in the worker thread when the task really completes.
-            loop.call_soon_threadsafe(bridge.put_nowait, done_sentinel)
+    def _auth_cookie_token(request: Request) -> str | None:
+        return request.cookies.get(app.state.settings.auth_cookie_name)
+
+    @app.post("/api/v2/auth/login")
+    async def auth_login(request: Request, body: AuthLoginRequest):
+        """Authenticate with username + password and open a server session.
+
+        Security order: Origin validation -> login throttle -> credential
+        check. All credential failures return the same public error so
+        account state is never enumerable.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        settings = app.state.settings
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        try:
+            verify_state_change_origin(request, settings)
+        except OriginError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "Request origin rejected",
+                status_code=403,
+            )
+        client_id = get_client_id(request)
+        try:
+            auth_runtime.throttle.check_and_record(ip=client_id, username=body.username)
+        except LoginThrottledError as exc:
+            return _error_response(
+                request_id,
+                PublicErrorCode.RATE_LIMITED,
+                "Too many login attempts; please retry later",
+                status_code=429,
+                retry_after=exc.retry_after_seconds,
+            )
+
+        def _login():
+            with auth_runtime.connection() as connection:
+                service = auth_runtime.session_service(connection, settings)
+                return service.login(
+                    body.username,
+                    body.password,
+                    client_hint=client_id,
+                    request_id=request_id,
+                )
+
+        try:
+            result = await asyncio.to_thread(_login)
+        except InvalidCredentialsError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.INVALID_CREDENTIALS,
+                "Invalid username or password",
+                status_code=401,
+            )
+        response = JSONResponse(
+            content=AuthSessionResponse(
+                request_id=request_id,
+                user=AuthUserPublic(
+                    username=result.principal.username,
+                    role=result.principal.role.value,
+                ),
+                csrf_token=result.csrf_token,
+            ).model_dump()
+        )
+        # Host-only cookie: no Domain attribute; the plaintext session
+        # token never appears in any response body or log.
+        response.set_cookie(
+            settings.auth_cookie_name, result.session_token, **session_cookie_kwargs(settings)
+        )
+        return response
+
+    @app.get("/api/v2/auth/me")
+    def auth_me(request: Request):
+        """Restore the frontend auth state from the HttpOnly cookie."""
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        settings = app.state.settings
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        try:
+            with auth_runtime.connection() as connection:
+                service = auth_runtime.session_service(connection, settings)
+                principal, session = service.resolve_session(_auth_cookie_token(request))
+                csrf_token = csrf_token_for(session)
+        except SessionError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.AUTHENTICATION_REQUIRED,
+                "Authentication required",
+                status_code=401,
+            )
+        return AuthSessionResponse(
+            request_id=request_id,
+            user=AuthUserPublic(username=principal.username, role=principal.role.value),
+            csrf_token=csrf_token,
+        )
+
+    @app.post("/api/v2/auth/logout")
+    async def auth_logout(request: Request):
+        """Revoke the server-side session immediately and clear the cookie.
+
+        Idempotent: an already-invalid session still clears the cookie and
+        reports success. CSRF is enforced only while a valid session exists.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        settings = app.state.settings
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        try:
+            verify_state_change_origin(request, settings)
+        except OriginError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "Request origin rejected",
+                status_code=403,
+            )
+        cookie_token = _auth_cookie_token(request)
+        csrf_header = request.headers.get("x-csrf-token")
+
+        def _logout() -> None:
+            with auth_runtime.connection() as connection:
+                service = auth_runtime.session_service(connection, settings)
+                try:
+                    _principal, session = service.resolve_session(cookie_token)
+                except SessionError:
+                    return  # Already gone; logout stays idempotent.
+                service.verify_csrf(session, csrf_header)
+                service.logout(cookie_token, request_id=request_id)
+
+        try:
+            await asyncio.to_thread(_logout)
+        except CsrfError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "CSRF validation failed",
+                status_code=403,
+            )
+        response = JSONResponse(
+            content=AuthResultResponse(request_id=request_id, result="logged_out").model_dump()
+        )
+        response.delete_cookie(settings.auth_cookie_name, path="/")
+        return response
+
+    async def _consume_credential_token(
+        request: Request, body: AuthActivateRequest, kind: str
+    ):
+        """Shared flow for the two purpose-pinned token endpoints.
+
+        ``kind`` selects the ONLY accepted token purpose: "activate" calls
+        activate_account (ACTIVATE_ACCOUNT tokens), "reset" calls
+        reset_password_with_token (RESET_PASSWORD tokens). There is no
+        public endpoint that inspects a token and auto-dispatches the
+        credential operation; cross-purpose tokens are rejected.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        settings = app.state.settings
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        try:
+            verify_state_change_origin(request, settings)
+        except OriginError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "Request origin rejected",
+                status_code=403,
+            )
+
+        def _consume():
+            with auth_runtime.connection() as connection:
+                service = auth_runtime.identity_service(connection, settings)
+                if kind == "activate":
+                    return service.activate_account(
+                        body.token, body.password, request_id=request_id
+                    )
+                return service.reset_password_with_token(
+                    body.token, body.password, request_id=request_id
+                )
+
+        try:
+            await asyncio.to_thread(_consume)
+        except TokenError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.INVALID_REQUEST,
+                "The link is invalid or has expired",
+                status_code=400,
+            )
+        except PasswordPolicyError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.INVALID_REQUEST,
+                "Password does not satisfy the password policy",
+                status_code=400,
+            )
+        except AccountUnavailableError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.ACCOUNT_UNAVAILABLE,
+                "Account is unavailable",
+                status_code=403,
+            )
+        result_label = "account_activated" if kind == "activate" else "password_updated"
+        return AuthResultResponse(request_id=request_id, result=result_label)
+
+    @app.post("/api/v2/auth/activate")
+    async def auth_activate(request: Request, body: AuthActivateRequest):
+        """Consume a single-use ACTIVATE_ACCOUNT token only.
+
+        A RESET_PASSWORD token submitted here is rejected (purpose
+        boundary). The admin never learns the chosen password.
+        """
+        return await _consume_credential_token(request, body, "activate")
+
+    @app.post("/api/v2/auth/reset-password")
+    async def auth_reset_password(request: Request, body: AuthActivateRequest):
+        """Consume a single-use RESET_PASSWORD token only.
+
+        An ACTIVATE_ACCOUNT token submitted here is rejected (purpose
+        boundary). The old password was already invalidated when the
+        reset token was issued.
+        """
+        return await _consume_credential_token(request, body, "reset")
+
+    @app.post("/api/v2/auth/change-password")
+    async def auth_change_password(request: Request, body: AuthChangePasswordRequest):
+        """Change the authenticated user's password.
+
+        The current session survives; every other session is revoked.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        settings = app.state.settings
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        try:
+            verify_state_change_origin(request, settings)
+        except OriginError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "Request origin rejected",
+                status_code=403,
+            )
+        cookie_token = _auth_cookie_token(request)
+        csrf_header = request.headers.get("x-csrf-token")
+
+        def _change():
+            with auth_runtime.connection() as connection:
+                service = auth_runtime.session_service(connection, settings)
+                _principal, session = service.resolve_session(cookie_token)
+                service.verify_csrf(session, csrf_header)
+                return service.change_password(
+                    cookie_token,
+                    body.current_password,
+                    body.new_password,
+                    min_length=settings.auth_password_min_length,
+                    max_length=settings.auth_password_max_length,
+                    request_id=request_id,
+                )
+
+        try:
+            await asyncio.to_thread(_change)
+        except SessionError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.AUTHENTICATION_REQUIRED,
+                "Authentication required",
+                status_code=401,
+            )
+        except CsrfError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "CSRF validation failed",
+                status_code=403,
+            )
+        except InvalidCredentialsError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.INVALID_CREDENTIALS,
+                "Current password is incorrect",
+                status_code=401,
+            )
+        except PasswordPolicyError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.INVALID_REQUEST,
+                "Password does not satisfy the password policy",
+                status_code=400,
+            )
+        return AuthResultResponse(request_id=request_id, result="password_changed")
+
+    def _v2_security_gate(
+        cookie_token: str | None,
+        csrf_header: str | None,
+    ) -> AuthenticatedPrincipal:
+        """Shared AuthN -> AuthZ -> CSRF gate for v2 ask endpoints.
+
+        One auth.db connection serves the whole gate so SSE and plain ask
+        enforce the exact same boundary (no SSE bypass). Authorization is
+        implicit and default-deny: resolve_session only accepts ACTIVE
+        accounts. Quota is intentionally NOT recorded here: it is counted
+        only once a request is about to enter the cost-bearing workflow.
+        """
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        with auth_runtime.connection() as connection:
+            service = auth_runtime.session_service(connection, settings)
+            principal, session = service.resolve_session(cookie_token)
+            service.verify_csrf(session, csrf_header)
+        return principal
+
+    def _v2_quota_gate(principal: AuthenticatedPrincipal, client_id: str, request_id: str) -> None:
+        """Atomic per-user quota check; audits and re-raises on denial."""
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        with auth_runtime.connection() as connection:
+            usage_guard = UsageGuard(connection, auth_runtime.quota_config(settings))
+            try:
+                usage_guard.check_and_record(principal.user_id)
+            except QuotaExceededError:
+                AuditLogger(connection).record(
+                    AuditEvent.QUOTA_EXCEEDED,
+                    result="denied",
+                    user_id=principal.user_id,
+                    request_id=request_id,
+                    client_hint=client_id,
+                )
+                raise
+
+    async def _v2_ask_preflight(
+        request: Request,
+    ) -> AuthenticatedPrincipal | JSONResponse:
+        """Security-boundary preflight for v2 ask endpoints.
+
+        Hardened precedence: Origin -> Authentication -> Authorization ->
+        CSRF first, then capability policy (kill switch). Anonymous callers
+        therefore ALWAYS receive AUTHENTICATION_REQUIRED, regardless of the
+        LLM kill switch state; capability enabled/disabled state is never
+        disclosed to unauthenticated callers.
+
+        Returns the authenticated principal, or the rejection response.
+        Runs before question processing, concurrency and quota, so
+        rejected requests consume zero generation resources and no quota.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        try:
+            verify_state_change_origin(request, settings)
+        except OriginError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "Request origin rejected",
+                status_code=403,
+            )
+        client_id = get_client_id(request)
+        try:
+            principal = await asyncio.to_thread(
+                _v2_security_gate,
+                _auth_cookie_token(request),
+                request.headers.get("x-csrf-token"),
+            )
+        except SessionError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.AUTHENTICATION_REQUIRED,
+                "Authentication required",
+                status_code=401,
+            )
+        except CsrfError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "CSRF validation failed",
+                status_code=403,
+            )
+        # Capability policy is evaluated only after the security boundary:
+        # the kill switch must never leak its state to anonymous callers.
+        if not settings.llm_enabled:
+            return _error_response(
+                request_id,
+                PublicErrorCode.SERVICE_DISABLED,
+                "The answer service is currently disabled",
+                status_code=503,
+            )
+        request.state.v2_client_id = client_id
+        return principal
+
+    def _v2_quota_then_error(
+        principal: AuthenticatedPrincipal,
+        guard: ConcurrencyGuard,
+        request_id: str,
+        client_id: str,
+    ) -> JSONResponse | None:
+        """Record quota after the concurrency slot is held.
+
+        SERVICE_BUSY rejections happen before this step and never consume
+        quota; a quota-exceeded request releases the slot and does not
+        count itself (the atomic transaction rolls back).
+        """
+        try:
+            _v2_quota_gate(principal, client_id, request_id)
+        except QuotaExceededError as exc:
+            guard.release()
+            return _error_response(
+                request_id,
+                PublicErrorCode.QUOTA_EXCEEDED,
+                "Usage quota exceeded; please retry later",
+                status_code=429,
+                retry_after=exc.retry_after_seconds,
+            )
+        return None
+
+    @app.post("/api/v2/ask", response_model=PublicAskResponse)
+    async def ask_v2(request: Request, body: PublicAskRequest) -> PublicAskResponse | JSONResponse:
+        """Authenticated ask endpoint.
+
+        Security order: Validation -> Origin -> Authentication ->
+        Authorization -> CSRF -> capability policy -> question controls ->
+        Concurrency -> Quota -> GroundedAnswerService. Only requests that
+        really enter generation consume quota. Retrieval stays public-only
+        downstream.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request.state.request_id = request_id
+        guard: ConcurrencyGuard = app.state.concurrency_guard
+
+        preflight = await _v2_ask_preflight(request)
+        if isinstance(preflight, JSONResponse):
+            return preflight
+        principal = preflight
+
+        question = body.question.strip()
+        length_error = _question_length_error(question, settings, request_id)
+        if length_error is not None:
+            return length_error
+
+        try:
+            guard.acquire()
+        except ServiceBusyError:
+            logger.warning("service_busy error_code=SERVICE_BUSY")
+            return _error_response(
+                request_id,
+                PublicErrorCode.SERVICE_BUSY,
+                "Service is busy; please retry later",
+                status_code=503,
+            )
+
+        quota_error = _v2_quota_then_error(
+            principal, guard, request_id, getattr(request.state, "v2_client_id", "unknown")
+        )
+        if quota_error is not None:
+            return quota_error
 
         executor: ThreadPoolExecutor = app.state.executor
         try:
-            future = executor.submit(_execute_generation, runtime, question, _progress)
+            future = executor.submit(_execute_generation, app.state.runtime, question)
         except RuntimeError:
-            # Executor was shut down (graceful shutdown in progress).
+            # Shutdown race: refund the quota, the work never started.
+            _refund_v2_quota(principal)
             guard.release()
             return _error_response(
                 request_id,
@@ -451,38 +914,104 @@ def create_app(
                 "Service is shutting down; please retry later",
                 status_code=503,
             )
-        # Slot ownership invariant (frozen in Phase 9A): the slot belongs to
-        # the generation task, not to the SSE connection. Client disconnect
-        # or API timeout never releases it early; only the done callback
-        # does. HTTP disconnect != generation cancellation.
         future.add_done_callback(lambda _future: guard.release())
-        future.add_done_callback(_on_done)
+        return _collect_generation(settings, future, request_id)
 
-        return StreamingResponse(
-            _stream_events(request, future, bridge, done_sentinel, request_id, settings),
-            media_type="text/event-stream",
-            headers=SSE_HEADERS,
+    @app.post("/api/v2/ask/stream")
+    async def ask_stream_v2(request: Request, body: PublicAskRequest) -> Response:
+        """Authenticated status-SSE endpoint.
+
+        Shares the exact same security gate as /api/v2/ask: authentication,
+        CSRF and quota are all enforced before the event stream opens, so
+        SSE never becomes a bypass. Pre-stream rejections are plain JSON.
+        """
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        request.state.request_id = request_id
+        guard: ConcurrencyGuard = app.state.concurrency_guard
+
+        preflight = await _v2_ask_preflight(request)
+        if isinstance(preflight, JSONResponse):
+            return preflight
+        principal = preflight
+
+        question = body.question.strip()
+        length_error = _question_length_error(question, settings, request_id)
+        if length_error is not None:
+            return length_error
+
+        try:
+            guard.acquire()
+        except ServiceBusyError:
+            logger.warning("service_busy error_code=SERVICE_BUSY")
+            return _error_response(
+                request_id,
+                PublicErrorCode.SERVICE_BUSY,
+                "Service is busy; please retry later",
+                status_code=503,
+            )
+
+        quota_error = _v2_quota_then_error(
+            principal, guard, request_id, getattr(request.state, "v2_client_id", "unknown")
         )
+        if quota_error is not None:
+            return quota_error
+
+        def _refund_quota() -> None:
+            _refund_v2_quota(principal)
+
+        return await _open_ask_stream(
+            app, request, question, request_id, settings, on_submit_failure=_refund_quota
+        )
+
+    def _refund_v2_quota(principal: AuthenticatedPrincipal) -> None:
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        try:
+            with auth_runtime.connection() as connection:
+                UsageGuard(connection, auth_runtime.quota_config(settings)).refund(
+                    principal.user_id
+                )
+        except Exception:
+            logger.warning("quota_refund_failed user_id=%s", principal.user_id)
 
     return app
 
 
 def _get_client_id(request: Request) -> str:
-    """Extract client identity for rate limiting.
+    """Extract client identity for rate limiting (Phase 9 compatibility)."""
+    return get_client_id(request)
 
-    `X-Forwarded-For` is trusted only when the direct peer is an explicitly
-    configured reverse proxy. This prevents a public caller from choosing its
-    own rate-limit identity.
+
+def validate_production_security_settings(settings: Settings) -> None:
+    """Fail-closed startup validation for production security posture.
+
+    Production must never serve the anonymous v1 ask endpoints: forgetting
+    ZGLAB_RAG_API_V1_RETIRED would silently leave an anonymous LLM
+    consumption entry after Phase 11. So a production process refuses to
+    start unless retirement is explicitly enabled. Local regression keeps
+    the historical v1 behavior under env=development.
     """
-    peer = request.client.host if request.client else None
-    if peer and peer in request.app.state.settings.api_trusted_proxy_ips:
-        forwarded_for = request.headers.get("x-forwarded-for", "")
-        first = forwarded_for.split(",", maxsplit=1)[0].strip()
-        if first:
-            return first
-    if peer:
-        return peer
-    return "unknown"
+    if settings.env == "production" and not settings.api_v1_retired:
+        raise RuntimeError(
+            "Refusing to start: production requires ZGLAB_RAG_API_V1_RETIRED=true "
+            "so /api/v1/ask cannot remain an anonymous LLM consumption entry"
+        )
+
+
+def _v1_retirement_response(settings: Settings, request_id: str) -> JSONResponse | None:
+    """Return the 410 Gone response when the anonymous v1 API is retired.
+
+    The Phase 9 v1 contract stays historically frozen in docs/public-api.md;
+    this switch is flipped during the Phase 11 production migration so v1
+    can never remain an anonymous LLM consumption entry.
+    """
+    if not settings.api_v1_retired:
+        return None
+    return _error_response(
+        request_id,
+        PublicErrorCode.API_RETIRED,
+        "This API version has been retired; please use the authenticated application",
+        status_code=410,
+    )
 
 
 def _preflight_controls(
@@ -505,22 +1034,11 @@ def _preflight_controls(
     concurrency slot was not acquired in that case).
     """
     question = raw_question.strip()
-    if len(question) < settings.api_question_min_length:
-        return question, _error_response(
-            request_id,
-            PublicErrorCode.INVALID_REQUEST,
-            "Question is too short",
-            status_code=400,
-        )
-    if len(question) > settings.api_question_max_length:
-        return question, _error_response(
-            request_id,
-            PublicErrorCode.INVALID_REQUEST,
-            f"Question exceeds maximum length of {settings.api_question_max_length} characters",
-            status_code=400,
-        )
+    length_error = _question_length_error(question, settings, request_id)
+    if length_error is not None:
+        return question, length_error
 
-    client_id = _get_client_id(request)
+    client_id = get_client_id(request)
     try:
         limiter.check(client_id)
     except RateLimitExceededError as exc:
@@ -546,6 +1064,27 @@ def _preflight_controls(
     return question, None
 
 
+def _question_length_error(
+    question: str, settings: Settings, request_id: str
+) -> JSONResponse | None:
+    """Shared question length validation for v1 and v2 ask endpoints."""
+    if len(question) < settings.api_question_min_length:
+        return _error_response(
+            request_id,
+            PublicErrorCode.INVALID_REQUEST,
+            "Question is too short",
+            status_code=400,
+        )
+    if len(question) > settings.api_question_max_length:
+        return _error_response(
+            request_id,
+            PublicErrorCode.INVALID_REQUEST,
+            f"Question exceeds maximum length of {settings.api_question_max_length} characters",
+            status_code=400,
+        )
+    return None
+
+
 def _execute_generation(
     runtime: ApplicationRuntime | None,
     question: str,
@@ -565,6 +1104,119 @@ def _execute_generation(
     with runtime.request_connection() as connection:
         service = runtime.create_service(connection)
         return service.answer(question, progress=progress)
+
+
+def _collect_generation(
+    settings: Settings, future: Future, request_id: str
+) -> PublicAskResponse | JSONResponse:
+    """Await a submitted generation task and map it to the public envelope.
+
+    Two independent deadline layers:
+    - api_request_timeout_seconds caps the whole workflow (retrieval +
+      generation + validation); exceeding it returns GENERATION_TIMEOUT.
+    - llm_timeout_seconds caps a single LLM provider call inside the
+      workflow; exceeding it surfaces as ProviderFailure and returns
+      PROVIDER_UNAVAILABLE. It is never mapped to INTERNAL_ERROR.
+    """
+    try:
+        result = future.result(timeout=settings.api_request_timeout_seconds)
+        return _map_result_to_response(result, request_id)
+    except FuturesTimeoutError:
+        logger.warning("request_id=%s error_code=GENERATION_TIMEOUT", request_id)
+        return _error_response(
+            request_id,
+            PublicErrorCode.GENERATION_TIMEOUT,
+            "Request timed out; please retry later",
+            status_code=504,
+        )
+    except ProviderFailure:
+        logger.warning("request_id=%s error_code=PROVIDER_UNAVAILABLE", request_id)
+        return _error_response(
+            request_id,
+            PublicErrorCode.PROVIDER_UNAVAILABLE,
+            "Answer service is temporarily unavailable",
+            status_code=503,
+        )
+    except GenerationError:
+        logger.warning("request_id=%s error_code=INTERNAL_ERROR", request_id)
+        return _error_response(
+            request_id,
+            PublicErrorCode.INTERNAL_ERROR,
+            "An error occurred while generating the answer",
+            status_code=500,
+        )
+    except Exception:
+        # Catch any other exception and return a safe error response
+        logger.error("request_id=%s error_code=INTERNAL_ERROR", request_id)
+        return _error_response(
+            request_id,
+            PublicErrorCode.INTERNAL_ERROR,
+            "An unexpected error occurred",
+            status_code=500,
+        )
+
+
+async def _open_ask_stream(
+    app: FastAPI,
+    request: Request,
+    question: str,
+    request_id: str,
+    settings: Settings,
+    *,
+    on_submit_failure: callable | None = None,
+) -> Response:
+    """Submit generation and open the status SSE stream.
+
+    Shared by /api/v1/ask/stream and /api/v2/ask/stream; both endpoints
+    must run their security gates before calling this helper. When the
+    executor rejects the submission (graceful shutdown race), the optional
+    on_submit_failure hook runs first — v2 uses it to refund quota that
+    was already counted for work that never started.
+    """
+    runtime = app.state.runtime
+    guard: ConcurrencyGuard = app.state.concurrency_guard
+
+    # Thread -> async bridge. asyncio.Queue is not thread-safe, so the
+    # worker thread only touches a stdlib SimpleQueue and wakes the event
+    # loop via loop.call_soon_threadsafe.
+    loop = asyncio.get_running_loop()
+    bridge: queue.SimpleQueue[ProgressStage | object] = queue.SimpleQueue()
+    done_sentinel = object()
+
+    def _progress(stage: ProgressStage) -> None:
+        # Runs in the generation worker thread.
+        loop.call_soon_threadsafe(bridge.put_nowait, stage)
+
+    def _on_done(_future: Future) -> None:
+        # Runs in the worker thread when the task really completes.
+        loop.call_soon_threadsafe(bridge.put_nowait, done_sentinel)
+
+    executor: ThreadPoolExecutor = app.state.executor
+    try:
+        future = executor.submit(_execute_generation, runtime, question, _progress)
+    except RuntimeError:
+        # Executor was shut down (graceful shutdown in progress).
+        if on_submit_failure is not None:
+            on_submit_failure()
+        guard.release()
+        return _error_response(
+            request_id,
+            PublicErrorCode.SERVICE_BUSY,
+            "Service is shutting down; please retry later",
+            status_code=503,
+        )
+    # Slot ownership invariant (frozen in Phase 9A): the slot belongs to
+    # the generation task, not to the SSE connection. Client disconnect
+    # or API timeout never releases it early; only the done callback
+    # does. HTTP disconnect != generation cancellation.
+    future.add_done_callback(lambda _future: guard.release())
+    future.add_done_callback(_on_done)
+
+    return StreamingResponse(
+        _stream_events(request, future, bridge, done_sentinel, request_id, settings),
+        media_type="text/event-stream",
+        headers=SSE_HEADERS,
+    )
 
 
 async def _stream_events(

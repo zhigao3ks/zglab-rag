@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatMessage } from "../App.vue";
+import type { ChatMessage } from "../conversation/types";
 import AnswerCard from "./AnswerCard.vue";
 
 defineProps<{

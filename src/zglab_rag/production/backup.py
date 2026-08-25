@@ -23,6 +23,7 @@ def backup_database(
     backup_dir: str | Path,
     *,
     retain_count: int = 7,
+    prefix: str = "knowledge",
     now: datetime | None = None,
 ) -> BackupResult:
     """Create a consistent SQLite snapshot, atomically publish it and prune old backups.
@@ -30,6 +31,9 @@ def backup_database(
     SQLite's backup API reads a consistent snapshot even when the source database is in
     WAL mode. The destination is first written to a uniquely named file in the target
     directory, then atomically moved into place; callers never observe a partial backup.
+
+    The same routine backs both knowledge.db and the Phase 11 auth.db; backups are
+    distinguished by filename prefix and pruned per prefix independently.
     """
     if retain_count <= 0:
         raise ValueError("retain_count must be positive")
@@ -40,10 +44,10 @@ def backup_database(
     target_dir = Path(backup_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     timestamp = (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
-    target_path = target_dir / f"knowledge-{timestamp}.db"
+    target_path = target_dir / f"{prefix}-{timestamp}.db"
     if target_path.exists():
         raise FileExistsError(target_path)
-    temporary_path = target_dir / f".knowledge-{uuid.uuid4().hex}.tmp"
+    temporary_path = target_dir / f".{prefix}-{uuid.uuid4().hex}.tmp"
 
     source = sqlite3.connect(f"file:{source_path.resolve()}?mode=ro", uri=True)
     destination = sqlite3.connect(temporary_path)
@@ -55,6 +59,10 @@ def backup_database(
         source.close()
 
     try:
+        # A backup must never be MORE permissive than the database it
+        # protects (auth.db backups carry password/session/token hashes).
+        # Inherit the source file's permission bits instead of the umask.
+        os.chmod(temporary_path, source_path.stat().st_mode & 0o777)
         with temporary_path.open("rb") as handle:
             os.fsync(handle.fileno())
         os.replace(temporary_path, target_path)
@@ -63,7 +71,7 @@ def backup_database(
         temporary_path.unlink(missing_ok=True)
         raise
 
-    backups = sorted(target_dir.glob("knowledge-*.db"), key=lambda item: item.name, reverse=True)
+    backups = sorted(target_dir.glob(f"{prefix}-*.db"), key=lambda item: item.name, reverse=True)
     removed = tuple(backups[retain_count:])
     for expired in removed:
         expired.unlink()

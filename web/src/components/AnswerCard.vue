@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import type { AssistantTurn } from "../App.vue";
+import type { AssistantTurn } from "../conversation/types";
 import { ERROR_LABELS } from "../api/contracts";
 import SourceList from "./SourceList.vue";
 import StatusIndicator from "./StatusIndicator.vue";

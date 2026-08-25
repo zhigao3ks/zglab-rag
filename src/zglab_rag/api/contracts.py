@@ -30,6 +30,15 @@ class PublicErrorCode(StrEnum):
     GENERATION_TIMEOUT = "GENERATION_TIMEOUT"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    # Phase 11 security error codes. Login failures deliberately never
+    # distinguish unknown user / wrong password / disabled account.
+    AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    ACCOUNT_UNAVAILABLE = "ACCOUNT_UNAVAILABLE"
+    CSRF_REJECTED = "CSRF_REJECTED"
+    QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
+    SERVICE_DISABLED = "SERVICE_DISABLED"
+    API_RETIRED = "API_RETIRED"
 
 
 class PublicAskRequest(BaseModel):
@@ -125,3 +134,64 @@ class PublicStreamStatus(BaseModel):
 # without duplicating schema definitions.
 PublicStreamCompleted = PublicAskResponse
 PublicStreamError = PublicErrorResponse
+
+
+# ---------------------------------------------------------------------------
+# Phase 11: authenticated API v2 contracts
+# ---------------------------------------------------------------------------
+
+
+class AuthLoginRequest(BaseModel):
+    """Login request body; narrow and extra-field rejecting."""
+
+    model_config = {"extra": "forbid"}
+
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class AuthActivateRequest(BaseModel):
+    """Activation / password-reset consumption body (single-use token)."""
+
+    model_config = {"extra": "forbid"}
+
+    token: str = Field(min_length=1, max_length=256)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class AuthChangePasswordRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+class AuthUserPublic(BaseModel):
+    """The minimal user representation safe for the SPA."""
+
+    username: str
+    role: Literal["ADMIN", "USER"]
+
+
+class AuthSessionResponse(BaseModel):
+    """Successful login / me response.
+
+    The CSRF token is session-bound and held by the SPA in memory only;
+    the session token itself never appears in any response body.
+    """
+
+    request_id: str
+    user: AuthUserPublic
+    csrf_token: str
+
+
+class AuthResultResponse(BaseModel):
+    """Generic success envelope for logout / activate / change-password."""
+
+    request_id: str
+    result: Literal[
+        "logged_out",
+        "account_activated",
+        "password_updated",
+        "password_changed",
+    ]

@@ -1,19 +1,33 @@
 /**
- * App-level tests with a mocked askStream client: UI state machine,
+ * Assistant view tests with a mocked askStream client: UI state machine,
  * conversation semantics, validation and lifecycle. No real backend.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
-import App from "../src/App.vue";
+import { createMemoryHistory, createRouter } from "vue-router";
+import AssistantView from "../src/views/AssistantView.vue";
 import type { AskStreamCallbacks } from "../src/api/client";
 import type { PublicAskResponse } from "../src/api/contracts";
+import { authState } from "../src/auth/store";
 
 const { askStreamMock } = vi.hoisted(() => ({ askStreamMock: vi.fn() }));
 
 vi.mock("../src/api/client", () => ({
   askStream: (...args: unknown[]) => askStreamMock(...args),
 }));
+
+/** Mount the authenticated assistant view with a stub router. */
+function mountAssistant() {
+  authState.user = { username: "alice", role: "USER" };
+  authState.csrfToken = "test-csrf";
+  authState.restoring = false;
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: "/", component: { template: "<div />" } }],
+  });
+  return mount(AssistantView, { global: { plugins: [router] } });
+}
 
 function completedPayload(overrides: Partial<PublicAskResponse> = {}): PublicAskResponse {
   return {
@@ -63,7 +77,7 @@ afterEach(() => {
 
 describe("empty state", () => {
   it("shows introduction and example prompts", () => {
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     const empty = wrapper.find('[data-testid="empty-state"]');
     expect(empty.exists()).toBe(true);
     expect(empty.text()).toContain("ZGLab Personal Knowledge Assistant");
@@ -74,7 +88,7 @@ describe("empty state", () => {
 
   it("clicking an example prompt sends it directly", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await wrapper.findAll(".conversation__example-button")[0].trigger("click");
     await flushPromises();
     expect(askStreamMock).toHaveBeenCalledTimes(1);
@@ -85,20 +99,20 @@ describe("empty state", () => {
 
 describe("composer validation", () => {
   it("disables send for empty question", () => {
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     expect(wrapper.find('[data-testid="send-button"]').attributes("disabled")).toBeDefined();
   });
 
   it("rejects whitespace-only question", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "   ");
     expect(askStreamMock).not.toHaveBeenCalled();
   });
 
   it("prevents sending over 1000 characters", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "长".repeat(1001));
     expect(askStreamMock).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="send-button"]').attributes("disabled")).toBeDefined();
@@ -106,13 +120,13 @@ describe("composer validation", () => {
 
   it("submits on Enter", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "你是谁？");
     expect(askStreamMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not submit on Shift+Enter (newline)", async () => {
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     const input = wrapper.find('[data-testid="question-input"]');
     await input.setValue("第一行");
     await input.trigger("keydown", { key: "Enter", shiftKey: true });
@@ -137,7 +151,7 @@ describe("state machine", () => {
       return hold;
     });
 
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "问题？");
     await flushPromises();
     expect(wrapper.find('[data-testid="status-indicator"]').text()).toContain(
@@ -157,7 +171,7 @@ describe("state machine", () => {
 
   it("renders completed answered with answer and sources", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "问题？");
     await flushPromises();
 
@@ -178,7 +192,7 @@ describe("state machine", () => {
         sources: [],
       }),
     );
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "红烧肉怎么做？");
     await flushPromises();
 
@@ -195,7 +209,7 @@ describe("state machine", () => {
     askStreamMock.mockImplementation(async (_q: string, callbacks: AskStreamCallbacks) => {
       callbacks.onError("RATE_LIMITED", "r9");
     });
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "问题？");
     await flushPromises();
 
@@ -207,7 +221,7 @@ describe("state machine", () => {
 
   it("prevents duplicate submit while a request is pending", async () => {
     mockPending();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "第一个问题？");
     await flushPromises();
     // Second submit attempt while pending is ignored.
@@ -221,7 +235,7 @@ describe("state machine", () => {
 describe("conversation semantics", () => {
   it("shows conversation locally across multiple turns", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "第一个问题？");
     await flushPromises();
     mockHappyPath(completedPayload({ request_id: "r2", answer: "第二个回答。" }));
@@ -238,7 +252,7 @@ describe("conversation semantics", () => {
 
   it("never sends history with the next request", async () => {
     mockHappyPath();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "第一个问题？");
     await flushPromises();
     await typeAndSubmit(wrapper, "第二个问题？");
@@ -250,7 +264,7 @@ describe("conversation semantics", () => {
 
   it("aborts the in-flight request on unmount", async () => {
     mockPending();
-    const wrapper = mount(App);
+    const wrapper = mountAssistant();
     await typeAndSubmit(wrapper, "问题？");
     await flushPromises();
 

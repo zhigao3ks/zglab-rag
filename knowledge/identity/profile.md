@@ -34,7 +34,7 @@ tags:
 
 - Website: https://zglab.fun
 - GitHub: https://github.com/zhigao3ks
-- Email: huangzg443@gmail.com
+- Email: huangzg0162@163.com
 
 ## 技术定位
 

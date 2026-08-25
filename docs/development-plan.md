@@ -120,7 +120,13 @@ Phase 16    Owner Agent / Advanced Permissions
 
 ## Phase 11 — Authentication & Access Control
 
-状态：**当前待实现。**
+状态：**已实现（11A / 11B / 11C / 11D），待生产迁移部署。**
+
+设计与验收：
+
+- `docs/authentication.md`
+- `docs/api-v2.md`
+- `docs/evaluations/phase-11-authentication-acceptance.md`
 
 核心目标：让公开展示继续可访问，但所有会触发 LLM / Search / MCP / Agent 成本的能力必须经过身份认证、
 授权与用户级成本边界。
@@ -234,7 +240,7 @@ POST /api/v2/ask/stream
 
 ## Phase 12 — Agent Capability Foundation & Web Research
 
-状态：**等待 Phase 11 完成。**
+状态：**等待 Phase 11 生产迁移完成。**
 
 原 2026-08-21 的 Web Research 设计顺延到本阶段。详见 `docs/web-research-skill.md`。
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from zglab_rag.config import get_settings
@@ -26,6 +27,49 @@ def _parser() -> argparse.ArgumentParser:
     backup.add_argument("--database", type=Path)
     backup.add_argument("--backup-dir", type=Path)
     backup.add_argument("--retain-count", type=int)
+    backup.add_argument(
+        "--auth",
+        action="store_true",
+        help="Back up the Phase 11 auth database instead of the knowledge index",
+    )
+
+    auth = commands.add_parser("auth", help="Auth database maintenance")
+    auth_commands = auth.add_subparsers(dest="auth_command", required=True)
+    auth_init = auth_commands.add_parser("init", help="Explicitly initialize auth.db schema")
+    auth_init.add_argument("--database", type=Path)
+
+    user = commands.add_parser("user", help="Admin user management (no public registration)")
+    user_commands = user.add_subparsers(dest="user_command", required=True)
+
+    user_create = user_commands.add_parser(
+        "create", help="Create a user and print the activation URL"
+    )
+    user_create.add_argument("username")
+    user_create.add_argument("--role", choices=["ADMIN", "USER"], default="USER")
+
+    user_commands.add_parser("list", help="List all users")
+
+    user_show = user_commands.add_parser(
+        "show", help="Show one user (no secrets, no token reprint)"
+    )
+    user_show.add_argument("username")
+
+    user_disable = user_commands.add_parser(
+        "disable", help="Disable a user and revoke all sessions"
+    )
+    user_disable.add_argument("username")
+
+    user_enable = user_commands.add_parser("enable", help="Re-enable a disabled user")
+    user_enable.add_argument("username")
+
+    user_reset = user_commands.add_parser(
+        "reset-password",
+        help="Revoke sessions and print a one-time password reset URL",
+    )
+    user_reset.add_argument("username")
+
+    user_revoke = user_commands.add_parser("revoke-sessions", help="Revoke all sessions of a user")
+    user_revoke.add_argument("username")
 
     sync = commands.add_parser("sync", help="Plan, apply or inspect configured knowledge sources")
     sync_commands = sync.add_subparsers(dest="sync_command", required=True)
@@ -156,13 +200,158 @@ def _sync(args: argparse.Namespace) -> int:
 
 def _backup(args: argparse.Namespace) -> int:
     settings = get_settings()
-    result = backup_database(
-        args.database or settings.database_path,
-        args.backup_dir or settings.backup_dir,
-        retain_count=args.retain_count or settings.backup_retain_count,
-    )
+    if getattr(args, "auth", False):
+        result = backup_database(
+            args.database or settings.auth_database_path,
+            args.backup_dir or settings.backup_dir,
+            retain_count=args.retain_count or settings.backup_retain_count,
+            prefix="auth",
+        )
+    else:
+        result = backup_database(
+            args.database or settings.database_path,
+            args.backup_dir or settings.backup_dir,
+            retain_count=args.retain_count or settings.backup_retain_count,
+        )
     print(f"backup={result.path} pruned={len(result.removed)}")
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Phase 11 auth administration
+# ---------------------------------------------------------------------------
+
+
+def _auth_service_context(args: argparse.Namespace):
+    """Open the auth database and construct the identity service.
+
+    Yields (connection, identity_service); the activation/reset URLs are
+    built from settings.auth_public_base_url.
+    """
+    from zglab_rag.auth.audit import AuditLogger
+    from zglab_rag.auth.database import AuthDatabase
+    from zglab_rag.auth.identity import IdentityConfig, IdentityService
+
+    settings = get_settings()
+    database_path = getattr(args, "database", None) or settings.auth_database_path
+    database = AuthDatabase(database_path)
+    connection = database.connect(initialize=True)
+    config = IdentityConfig(
+        password_min_length=settings.auth_password_min_length,
+        password_max_length=settings.auth_password_max_length,
+        activation_token_ttl=timedelta(hours=settings.auth_activation_token_hours),
+        reset_token_ttl=timedelta(hours=settings.auth_reset_token_hours),
+    )
+    service = IdentityService(connection, AuditLogger(connection), config)
+    return connection, service, settings
+
+
+def _activation_url(settings, token: str, *, purpose: str = "activate") -> str:
+    """Build the one-time credential URL using FRAGMENT transport.
+
+    The token lives after '#', so it is never sent to the server: it stays
+    out of Nginx access logs, application logs, server-side URL handling
+    and Referer headers. The SPA reads it from location.hash, strips it
+    from history immediately and submits it only in a POST body.
+    """
+    base = settings.auth_public_base_url.rstrip("/")
+    if purpose == "reset":
+        return f"{base}/activate#token={token}&purpose=reset"
+    return f"{base}/activate#token={token}"
+
+
+def _auth(args: argparse.Namespace) -> int:
+    from zglab_rag.auth.database import AUTH_SCHEMA_VERSION, AuthDatabase
+
+    settings = get_settings()
+    database = AuthDatabase(args.database or settings.auth_database_path)
+    connection = database.connect(initialize=True)
+    try:
+        version = AuthDatabase.schema_version(connection)
+    finally:
+        connection.close()
+    print(f"auth_database={database.path} schema_version={version}")
+    if version != AUTH_SCHEMA_VERSION:
+        return 1
+    return 0
+
+
+def _user(args: argparse.Namespace) -> int:
+    from zglab_rag.auth.models import TokenPurpose, UserRole
+
+    connection, service, settings = _auth_service_context(args)
+    try:
+        if args.user_command == "create":
+            provisioned = service.provision_user(
+                args.username,
+                role=UserRole(args.role),
+                created_by="cli",
+            )
+            print(
+                f"user={provisioned.user.username} id={provisioned.user.id} "
+                f"role={provisioned.user.role.value} status={provisioned.user.status.value}"
+            )
+            # The activation URL is a sensitive one-time credential: shown
+            # once to the admin, never logged and never re-displayed.
+            print(f"activation_url={_activation_url(settings, provisioned.token)}")
+            print("note=send this URL to the user over a trusted channel; it is single-use")
+            return 0
+        if args.user_command == "list":
+            for user in service.users.list_users():
+                print(
+                    f"user={user.username} id={user.id} role={user.role.value} "
+                    f"status={user.status.value} created_at={user.created_at.isoformat()} "
+                    f"activated_at={user.activated_at.isoformat() if user.activated_at else '-'}"
+                )
+            return 0
+        if args.user_command == "show":
+            from zglab_rag.auth.identity import normalize_username
+
+            user = service.users.get_by_username(normalize_username(args.username))
+            if user is None:
+                raise LookupError(f"Username '{args.username}' does not exist")
+            print(
+                f"user={user.username} id={user.id} role={user.role.value} "
+                f"status={user.status.value} created_by={user.created_by or '-'} "
+                f"created_at={user.created_at.isoformat()} "
+                f"activated_at={user.activated_at.isoformat() if user.activated_at else '-'} "
+                f"password_changed_at="
+                f"{user.password_changed_at.isoformat() if user.password_changed_at else '-'}"
+            )
+            return 0
+        if args.user_command == "disable":
+            user = service.set_enabled(args.username, enabled=False)
+            print(f"user={user.username} status={user.status.value} sessions=revoked")
+            return 0
+        if args.user_command == "enable":
+            user = service.set_enabled(args.username, enabled=True)
+            print(f"user={user.username} status={user.status.value}")
+            return 0
+        if args.user_command == "reset-password":
+            provisioned = service.admin_reset_password(args.username)
+            is_reset = provisioned.purpose == TokenPurpose.RESET_PASSWORD
+            credential_note = " credential=RESET_REQUIRED" if is_reset else ""
+            print(
+                f"user={provisioned.user.username} purpose={provisioned.purpose.value} "
+                f"sessions=revoked{credential_note}"
+            )
+            reset_purpose = "reset" if is_reset else "activate"
+            reset_url = _activation_url(settings, provisioned.token, purpose=reset_purpose)
+            print(f"reset_url={reset_url}")
+            note = (
+                "note=this URL is single-use; the old password stops working immediately"
+                if is_reset
+                else "note=this URL is single-use; it sets the first password"
+            )
+            print(note)
+            return 0
+        if args.user_command == "revoke-sessions":
+            revoked = service.revoke_sessions(args.username)
+            print(f"user={args.username.lower()} revoked_sessions={revoked}")
+            return 0
+        raise ValueError(f"unknown user command: {args.user_command}")
+    finally:
+        connection.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -170,6 +359,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "backup":
             return _backup(args)
+        if args.command == "auth":
+            return _auth(args)
+        if args.command == "user":
+            return _user(args)
         return _sync(args)
     except Exception as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)

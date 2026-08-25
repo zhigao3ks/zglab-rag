@@ -12,7 +12,7 @@ Persona 只影响表达方式，不允许覆盖事实边界。
 
 ## 当前能力
 
-Phase 0–10 已完成：
+Phase 0–11 已完成：
 
 - Markdown / Local Git knowledge ingestion；
 - `config/sources.yaml` 驱动的公开知识源注册；
@@ -23,13 +23,17 @@ Phase 0–10 已完成：
 - CrossEncoder Reranker evaluation；
 - Evidence-Grounded Generation；
 - claim-level Citation Validation；
-- Public API v1；
+- Public API v1（Phase 9 冻结，Phase 11 起由 v2 接替）；
 - SSE 状态流；
 - Vue 3 Web Assistant；
 - Nginx / HTTPS / systemd；
 - 增量 Git source sync；
 - SQLite 原子备份与恢复；
-- Phase 9 / Phase 10 产品与生产验收。
+- Phase 9 / Phase 10 产品与生产验收；
+- **Phase 11 Authentication & Access Control**：独立 `auth.db`、Argon2id、
+  admin CLI 开户 + 单次激活链接、Server-side Session + HttpOnly Cookie、
+  CSRF / Origin 防护、登录双维度限流、用户级配额、LLM kill switch、
+  `/api/v2` 认证问答与 v1 退役。
 
 当前生产索引约 1,058 个 Chunk，`knowledge.db` 约 9.6 MiB。生产环境稳定 RSS 约 439 MiB，
 API / SSE / Vue SPA / Sources / insufficient-evidence 均已完成公网验证。
@@ -53,8 +57,8 @@ API / SSE / Vue SPA / Sources / insufficient-evidence 均已完成公网验证�
 
 ```text
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
-Phase 11    Authentication & Access Control             ← 当前阶段
-Phase 12    Agent Capability Foundation & Web Research
+Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
+Phase 12    Agent Capability Foundation & Web Research  ← 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -63,11 +67,9 @@ Phase 16    Owner Agent / Advanced Permissions
 
 完整新路线见 [`docs/roadmap-v2.md`](docs/roadmap-v2.md)。
 
-## Phase 11 — Authentication & Access Control
+## Phase 11 — Authentication & Access Control（已实现）
 
-当前优先目标不是继续增加 Web Search，而是先给公网系统增加统一 Security Foundation。
-
-计划中的访问模型：
+访问模型为“展示公开，消费型 AI 能力登录后使用”：
 
 ```text
 ask.zglab.fun
@@ -79,21 +81,35 @@ ask.zglab.fun
               └── RAG + future Agent capabilities
 ```
 
-Phase 11 冻结方向：
+已落地的冻结原则：
 
-- 不开放匿名注册；
-- 账号由管理员 CLI 创建和下发；
-- Admin Provisioning + Single-use Activation Token；
-- Argon2id password hashing；
-- Server-side Session + Secure HttpOnly Cookie；
-- Auth 数据使用独立 `auth.db`，不写入 `knowledge.db`；
-- Session / Activation Token 数据库只保存 hash；
-- CSRF / Origin 防护；
-- per-IP + per-identity login throttling；
-- per-user rate limit / daily quota；
+- 不开放匿名注册；账号由管理员 CLI 创建和下发；
+- Admin Provisioning + Single-use Activation Token（数据库只存 SHA-256）；
+- Argon2id password hashing（长度优先策略，12–128）；
+- Server-side Session + `__Host-zglab_session` Secure/HttpOnly/SameSite=Lax Cookie；
+- Auth 数据独立于 `auth.db`（schema version 2，WAL，fail-fast），不写入 `knowledge.db`；
+- Origin validation + session-bound CSRF token（SSE 与普通 ask 同一安全门）；
+- per-IP + per-username login throttling；统一登录错误防枚举；
+- per-user rate limit / daily quota（429 + 审计）；
+- `ZGLAB_RAG_LLM_ENABLED` kill switch；`ZGLAB_RAG_API_V1_RETIRED` 退役开关；
 - 保留 Phase 9 的 concurrency / timeout / request-size / safe-error 防护；
 - Public Landing 与 `/health` / `/ready` 保持匿名可访问；
-- Phase 11 不实现 Web Research、MCP、Agent Planner、Conversation Memory。
+- 未实现 Web Research、MCP、Agent Planner、Conversation Memory（后续 Phase）。
+
+管理员 CLI（无 Web Admin Console）：
+
+```bash
+zglab-rag auth init
+zglab-rag user create <username> [--role ADMIN|USER]   # 输出一次性激活链接
+zglab-rag user list / show / disable / enable
+zglab-rag user reset-password <username>               # 撤销会话 + 一次性重置链接
+zglab-rag user revoke-sessions <username>
+zglab-rag backup --auth
+```
+
+设计细节：[`docs/authentication.md`](docs/authentication.md)、
+[`docs/api-v2.md`](docs/api-v2.md)；验收：
+[`docs/evaluations/phase-11-authentication-acceptance.md`](docs/evaluations/phase-11-authentication-acceptance.md)。
 
 ## Phase 12+ Agent 方向
 
@@ -129,9 +145,12 @@ Web Research 原冻结设计见 [`docs/web-research-skill.md`](docs/web-research
 - [`docs/knowledge-model.md`](docs/knowledge-model.md)：知识模型与 public/private 边界
 - [`docs/generation-grounding.md`](docs/generation-grounding.md)：Grounding / Citation 设计
 - [`docs/public-api.md`](docs/public-api.md)：Phase 9 Public API v1 冻结记录
+- [`docs/authentication.md`](docs/authentication.md)：Phase 11 认证与访问控制设计
+- [`docs/api-v2.md`](docs/api-v2.md)：Phase 11 Authenticated API v2 契约
 - [`docs/web-research-skill.md`](docs/web-research-skill.md)：Phase 12 Web Research 设计
 - [`docs/production-architecture.md`](docs/production-architecture.md)：Phase 10 生产架构
 - [`docs/evaluations/phase-10-production-acceptance.md`](docs/evaluations/phase-10-production-acceptance.md)：生产验收记录
+- [`docs/evaluations/phase-11-authentication-acceptance.md`](docs/evaluations/phase-11-authentication-acceptance.md)：Phase 11 验收记录
 
 ## 目录
 
@@ -149,6 +168,7 @@ zglab-rag/
 ├── src/zglab_rag/
 │   ├── api/
 │   ├── application/
+│   ├── auth/
 │   ├── domain/
 │   ├── embeddings/
 │   ├── evaluation/

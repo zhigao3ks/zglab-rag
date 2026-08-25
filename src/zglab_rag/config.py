@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -65,6 +67,57 @@ class Settings(BaseSettings):
     api_cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8000", "http://127.0.0.1:8000"])
     api_sse_heartbeat_seconds: float = 15.0
     api_trusted_proxy_ips: list[str] = Field(default_factory=lambda: ["127.0.0.1", "::1"])
+    # Phase 11: retire the anonymous v1 ask endpoints (410 Gone). Keep
+    # false for local regression of Phase 9 contracts; production sets true
+    # during the Phase 11 migration.
+    api_v1_retired: bool = False
+
+    # Phase 11 Authentication & Access Control
+    auth_database_path: Path = Path("runtime/auth.db")
+    # Public origin used to build activation URLs in CLI output and to
+    # validate Origin/Referer headers; set to https://ask.zglab.fun in prod.
+    auth_public_base_url: str = "http://localhost:8000"
+    # Explicit origin allowlist for Origin/Referer validation. Empty means
+    # "same host as auth_public_base_url".
+    auth_allowed_origins: list[str] = Field(default_factory=list)
+    auth_cookie_name: str = "__Host-zglab_session"
+    # __Host- cookies require Secure; tests/local HTTP may disable it.
+    auth_cookie_secure: bool = True
+    auth_session_idle_timeout_hours: float = 24 * 7
+    auth_session_absolute_timeout_hours: float = 24 * 30
+    auth_activation_token_hours: float = 24.0
+    auth_reset_token_hours: float = 24.0
+    auth_password_min_length: int = 12
+    auth_password_max_length: int = 128
+    auth_login_per_ip_attempts: int = 10
+    auth_login_per_ip_window_seconds: int = 600
+    auth_login_per_username_attempts: int = 5
+    auth_login_per_username_window_seconds: int = 900
+    auth_user_requests_per_minute: int = 10
+    auth_user_requests_per_day: int = 100
+
+    # Capability kill switches. LLM_ENABLED=false keeps landing/login/auth
+    # working while ask endpoints refuse to call the external provider.
+    llm_enabled: bool = True
+
+    @model_validator(mode="after")
+    def _validate_auth_cookie_security(self) -> Settings:
+        """Refuse the insecure __Host- + Secure=false combination.
+
+        Browsers reject a __Host- cookie without Secure, so this
+        misconfiguration would silently break authentication — and it is
+        exactly the weak-cookie trap production must never fall into.
+        Local HTTP development must use a plain dev-only cookie name
+        (e.g. zglab_session_dev) together with Secure=false.
+        """
+        if self.auth_cookie_name.startswith("__Host-") and not self.auth_cookie_secure:
+            raise ValueError(
+                "auth_cookie_name uses the __Host- prefix, which requires "
+                "auth_cookie_secure=true; refusing insecure __Host- cookie "
+                "configuration. For local HTTP development set a plain "
+                "cookie name (e.g. zglab_session_dev) instead."
+            )
+        return self
 
     @property
     def llm_provider_configured(self) -> bool:

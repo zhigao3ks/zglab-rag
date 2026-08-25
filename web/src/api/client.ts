@@ -1,12 +1,16 @@
 /**
- * Fetch-based SSE client for POST /api/v1/ask/stream.
+ * Fetch-based SSE client for POST /api/v2/ask/stream (Phase 11).
  *
  * EventSource is not usable for POST endpoints, so this uses fetch +
  * ReadableStream + TextDecoder with the incremental SSE parser.
  *
+ * Authentication travels in the HttpOnly session cookie
+ * (credentials: "same-origin"); the session-bound CSRF token is attached
+ * as X-CSRF-Token and comes from the in-memory auth store only.
+ *
  * Error boundary:
  * - Pre-stream failures arrive as non-2xx `application/json` responses
- *   (the Phase 9A public error envelope) and are surfaced as onError.
+ *   (the public error envelope) and are surfaced as onError.
  * - Post-stream failures arrive as SSE `error` events and are surfaced
  *   as onError as well; the stream stops, no completed is awaited.
  * - fetch rejections, unexpected closes and malformed payloads become
@@ -20,6 +24,7 @@ import type {
 } from "./contracts";
 import { isPublicErrorCode } from "./contracts";
 import { SseIncrementalParser, StreamPayloadError, mapRawEvent } from "./sse";
+import { getCsrfToken } from "../auth/store";
 
 export interface AskStreamCallbacks {
   onStage(stage: StreamStage, requestId: string): void;
@@ -31,7 +36,7 @@ export interface AskStreamCallbacks {
 const API_BASE: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export function askStreamUrl(): string {
-  return `${API_BASE}/api/v1/ask/stream`;
+  return `${API_BASE}/api/v2/ask/stream`;
 }
 
 interface EnvelopeLike {
@@ -66,9 +71,15 @@ export async function askStream(
 ): Promise<void> {
   let response: Response;
   try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const csrfToken = getCsrfToken();
+    if (csrfToken !== null) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
     response = await fetch(askStreamUrl(), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      headers,
       body: JSON.stringify({ question }),
       signal,
     });

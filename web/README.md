@@ -1,10 +1,11 @@
-# ZGLab Assistant Web（Phase 9C）
+# ZGLab Assistant Web（Phase 9C → Phase 11）
 
-面向访客的 ZGLab Personal Knowledge Assistant Web UI。
+面向访客的 ZGLab Personal Knowledge Assistant Web UI。Phase 11 起升级为
+Public Landing + Login + Activation + Authenticated Assistant。
 
 ## 技术栈
 
-- Vue 3（Composition API）+ Vite + TypeScript
+- Vue 3（Composition API）+ Vue Router + Vite + TypeScript
 - 原生 / scoped CSS（无 UI 框架、无 Tailwind、无 Pinia）
 - Vitest + Vue Test Utils（jsdom）
 
@@ -41,11 +42,21 @@ web/
 ├── .env.example
 ├── src/
 │   ├── main.ts
-│   ├── App.vue             # 会话状态机（内存态，无持久化）
+│   ├── App.vue             # 会话恢复（GET /auth/me）+ <router-view>
+│   ├── router.ts           # 路由与 UX 守卫（真正授权在后端）
+│   ├── auth/
+│   │   ├── api.ts          # /api/v2/auth REST client（same-origin + CSRF 头）
+│   │   └── store.ts        # 内存态 auth 状态（不落 localStorage）
 │   ├── api/
 │   │   ├── contracts.ts    # 与后端窄契约对应的 TS 类型 + 文案映射
-│   │   ├── client.ts       # fetch + ReadableStream SSE client
+│   │   ├── client.ts       # fetch + ReadableStream SSE client（/api/v2）
 │   │   └── sse.ts          # 增量 SSE parser（跨 chunk 重组、heartbeat 忽略）
+│   ├── views/
+│   │   ├── LandingView.vue     # 公开落地页（匿名）
+│   │   ├── LoginView.vue
+│   │   ├── ActivateView.vue    # /activate#token=... 设置密码（fragment transport）
+│   │   └── AssistantView.vue   # 认证后助手（含退出/改密）
+│   ├── conversation/types.ts   # 会话 view-model 类型
 │   ├── components/
 │   │   ├── AssistantHeader.vue
 │   │   ├── ConversationView.vue
@@ -54,12 +65,23 @@ web/
 │   │   ├── SourceList.vue
 │   │   └── StatusIndicator.vue
 │   └── styles/main.css     # CSS variables（颜色/间距/圆角）
-└── tests/                  # sse / client / app / components 测试
+└── tests/                  # sse / client / app / components / auth 测试
 ```
+
+## 认证（Phase 11）
+
+- 会话凭证是 HttpOnly Cookie（`__Host-zglab_session`），JS 永远读不到；
+  前端用 `credentials: "same-origin"` 自动携带。
+- CSRF token 由 `/api/v2/auth/login` / `/api/v2/auth/me` 下发，保存在内存
+  store，随 state-changing 请求以 `X-CSRF-Token` 头发送；**不存
+  localStorage**。
+- 路由守卫只负责 UX；任何能力调用都以后端 AuthN/AuthZ 为准。
+- 刷新页面后通过 `GET /api/v2/auth/me` 恢复登录态。
 
 ## SSE client 说明
 
-后端端点是 `POST /api/v1/ask/stream`，浏览器 `EventSource` 仅支持 GET，因此
+后端端点是 `POST /api/v2/ask/stream`（Phase 11；v1 已退役），浏览器
+`EventSource` 仅支持 GET，因此
 客户端使用 `fetch + ReadableStream + TextDecoder` 加自实现的增量 SSE parser：
 
 - parser 维护跨 chunk 行缓冲，事件可在任意字节边界被拆分；
@@ -79,9 +101,11 @@ web/
 - AbortController 仅用于组件卸载时断开 fetch；HTTP disconnect 不等于
   后端 generation 取消（Phase 9B 冻结语义）。
 
-## 契约稳定性（Phase 9D 验收后）
+## 契约稳定性
 
 Phase 9D 全系统产品验收通过后，后端 Public API v1（端点、status、错误码、
-SSE stages）已冻结；前端 SSE client 契约随之稳定。Phase 11 未来新增
-`researching` / `researched` 将是向后兼容扩展，不破坏当前客户端。验收记录见
-仓库根 `docs/evaluations/phase-9-product-acceptance.md`。
+SSE stages）曾冻结；Phase 11 引入认证后的 `/api/v2`，v1 通过
+`ZGLAB_RAG_API_V1_RETIRED` 退役（410）。v2 的 SSE stages / status / 错误
+信封与 v1 保持一致，仅新增安全错误码（见仓库根 `docs/api-v2.md`）。验收记录见
+仓库根 `docs/evaluations/phase-9-product-acceptance.md` 与
+`docs/evaluations/phase-11-authentication-acceptance.md`。

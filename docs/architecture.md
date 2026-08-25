@@ -244,11 +244,12 @@ Nginx
 
 # Agent Roadmap Architecture
 
-## 9. Phase 11 — Authentication & Access Control
+## 9. Phase 11 — Authentication & Access Control（已实现）
 
-Phase 11 是当前阶段。
+Phase 11 已实现并验收（见 `docs/evaluations/phase-11-authentication-acceptance.md`）。
+设计与契约冻结在 `docs/authentication.md` 与 `docs/api-v2.md`。
 
-在所有新的 Web Search、MCP、Agent 多步调用能力之前，先建立统一 Security Foundation：
+在所有新的 Web Search、MCP、Agent 多步调用能力之前，先建立的统一 Security Foundation：
 
 ```text
 Internet
@@ -270,15 +271,16 @@ Application / Future Agent Runtime
 
 ### Auth Data Boundary
 
-建议：
+实现：
 
 ```text
 runtime/
 ├── knowledge.db     # knowledge/index lifecycle
-└── auth.db          # identity/session/security lifecycle
+└── auth.db          # identity/session/security lifecycle（独立 schema version，WAL，fail-fast）
 ```
 
-两种数据库不得混为一个 lifecycle。
+两种数据库不得混为一个 lifecycle；认证模块位于 `src/zglab_rag/auth/`，
+不触碰检索/生成内部，API 层通过 `api/security.py` 的 `AuthRuntime` 接入。
 
 ### Session Model
 
@@ -323,7 +325,15 @@ Authenticated user 仍必须经过：
 
 Authentication 不能替代资源保护。
 
-Phase 11 详细开发边界见 `docs/development-plan.md`；实现时新增独立 authentication 设计文档。
+实现上的完整安全顺序（`/api/v2/ask` 与 `/api/v2/ask/stream` 共用，SSE 无旁路）：
+
+```text
+Request Validation → Kill Switch → Origin → Authentication → Authorization
+→ CSRF → Quota → Question length → Concurrency → GroundedAnswerService
+```
+
+旧 `/api/v1` 由 `ZGLAB_RAG_API_V1_RETIRED` 控制退役（410 API_RETIRED），
+Phase 9 历史契约保留在 `docs/public-api.md`。
 
 ## 10. Phase 12 — Capability Foundation & Web Research
 

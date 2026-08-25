@@ -36,13 +36,17 @@ Phase 0–10 已经完成了 Personal Knowledge Assistant 的核心基础设施�
 ```text
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
 
-Phase 11    Authentication & Access Control             ← 当前阶段
-Phase 12    Agent Capability Foundation & Web Research
+Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
+Phase 12    Agent Capability Foundation & Web Research  ← 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
 ```
+
+Phase 11 的实现与验收见 `docs/authentication.md`、`docs/api-v2.md` 与
+`docs/evaluations/phase-11-authentication-acceptance.md`；生产迁移步骤见
+验收文档第 5 节。在 Phase 11 部署完成前，不得开始 Phase 12 开发。
 
 Evaluation 继续作为跨阶段基础设施，不重新成为独立 Phase。
 
@@ -282,4 +286,4 @@ docs/evaluations/phase-10-*.md
 
 当前唯一允许开始的下一 Product Phase 是：
 
-> **Phase 11 — Authentication & Access Control**
+> **Phase 12 — Agent Capability Foundation & Web Research**（前提：Phase 11 已完成生产迁移）

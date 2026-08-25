@@ -12,7 +12,15 @@ export type PublicErrorCode =
   | "SERVICE_BUSY"
   | "GENERATION_TIMEOUT"
   | "PROVIDER_UNAVAILABLE"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  // Phase 11 security error codes.
+  | "AUTHENTICATION_REQUIRED"
+  | "INVALID_CREDENTIALS"
+  | "ACCOUNT_UNAVAILABLE"
+  | "CSRF_REJECTED"
+  | "QUOTA_EXCEEDED"
+  | "SERVICE_DISABLED"
+  | "API_RETIRED";
 
 /** Frontend-only code for fetch/network/protocol failures. */
 export type FrontendErrorCode = PublicErrorCode | "NETWORK";
@@ -72,6 +80,13 @@ export const ERROR_LABELS: Record<FrontendErrorCode, string> = {
   GENERATION_TIMEOUT: "本次回答耗时过长，可以稍后重试。",
   PROVIDER_UNAVAILABLE: "回答服务暂时不可用，请稍后再试。",
   INTERNAL_ERROR: "服务暂时出现问题，请稍后再试。",
+  AUTHENTICATION_REQUIRED: "请先登录后再使用助手。",
+  INVALID_CREDENTIALS: "用户名或密码错误。",
+  ACCOUNT_UNAVAILABLE: "账号当前不可用，请联系管理员。",
+  CSRF_REJECTED: "请求未通过安全校验，请刷新页面后重试。",
+  QUOTA_EXCEEDED: "今日或本分钟的使用额度已达上限，请稍后再试。",
+  SERVICE_DISABLED: "回答服务当前已被临时关闭，请稍后再试。",
+  API_RETIRED: "该接口版本已停用，请刷新页面。",
   NETWORK: "网络连接异常，请稍后重试。",
 };
 
@@ -82,7 +97,14 @@ export function isPublicErrorCode(value: unknown): value is PublicErrorCode {
     value === "SERVICE_BUSY" ||
     value === "GENERATION_TIMEOUT" ||
     value === "PROVIDER_UNAVAILABLE" ||
-    value === "INTERNAL_ERROR"
+    value === "INTERNAL_ERROR" ||
+    value === "AUTHENTICATION_REQUIRED" ||
+    value === "INVALID_CREDENTIALS" ||
+    value === "ACCOUNT_UNAVAILABLE" ||
+    value === "CSRF_REJECTED" ||
+    value === "QUOTA_EXCEEDED" ||
+    value === "SERVICE_DISABLED" ||
+    value === "API_RETIRED"
   );
 }
 
