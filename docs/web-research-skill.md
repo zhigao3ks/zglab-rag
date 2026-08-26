@@ -19,6 +19,13 @@
 本文档冻结 Phase 12 中 Web Research 能力的设计边界。当前不要求提前实现任何 Phase 13+ MCP、
 Phase 14 Agent Planner 或 Phase 15 Session Context。
 
+> **实现状态 — 2026-08-26**：Phase 12B（Web Research Core）已按本设计落地：
+> SearchProvider（Tavily）/ candidate selection / safe fetch（SSRF + DNS +
+> redirect 逐跳重验）/ 确定性 extraction / ExternalEvidence（untrusted、
+> URL provenance）。运行细节见 `docs/web-research-runtime.md`，验收见
+> `docs/evaluations/phase-12b-web-research-core.md`。Grounded Generation /
+> Citation 集成（12C）与产品集成（12D）未开始。
+
 ## 1. Motivation
 
 当前 Personal Knowledge Assistant 只能基于 Personal Knowledge Base 回答。当个人知识库没有足够证据时，

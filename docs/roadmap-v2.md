@@ -38,7 +38,8 @@ Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
 
 Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
-Phase 12B   Web Research Core                           ⏳ 下一 Product Phase
+Phase 12B   Web Research Core                           ✅ 已实现
+Phase 12C   Evidence + Grounded Generation Integration  ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -54,7 +55,9 @@ Phase 11 已于 **2026-08-26** 完成生产迁移、真实 HTTPS 浏览器验收
 Phase 12A（Capability Foundation & PersonalKnowledgeSkill）已实现，见
 `docs/capability-architecture.md` 与
 `docs/evaluations/phase-12a-capability-foundation.md`；Phase 12B（Web
-Research Core）未开始，在获得明确授权前不得实现 Web Research。
+Research Core）已实现，见 `docs/web-research-runtime.md` 与
+`docs/evaluations/phase-12b-web-research-core.md`；Phase 12C（Evidence +
+Grounded Generation Integration）未开始，在获得明确授权前不得开始。
 
 Evaluation 继续作为跨阶段基础设施，不重新成为独立 Phase。
 
@@ -149,9 +152,16 @@ POST /api/v2/ask/stream
 
 验收见 `docs/evaluations/phase-12a-capability-foundation.md`。
 
-### Phase 12B — Web Research Core ⏳（未开始）
+### Phase 12B — Web Research Core ✅
 
-Phase 12B 的重点是：
+已实现：SearchProvider（Tavily adapter + deterministic fake）、candidate
+selection、Safe Fetch（SSRF / DNS / redirect 逐跳重验、bounded size /
+timeout / content-type）、确定性 extraction、ExternalEvidence（untrusted、
+URL provenance）与 bounded ResearchService / WebResearchSkill。未接入
+公网 API，未接 Grounded Generation；验收见
+`docs/evaluations/phase-12b-web-research-core.md`。
+
+Phase 12B 已完成的要点：
 
 - 实现 request-scoped `WebResearchSkill`；
 - SearchProvider 可替换；
@@ -310,5 +320,6 @@ docs/evaluations/phase-10-*.md
 
 当前唯一允许开始的下一 Product Phase 是：
 
-> **Phase 12B — Web Research Core**（Phase 12 的第一部分 12A — Capability
-> Foundation 已完成；前提：获得明确授权）
+> **Phase 12C — Evidence + Grounded Generation Integration**（Phase 12 的
+> 12A — Capability Foundation 与 12B — Web Research Core 已完成；前提：
+> 获得明确授权）

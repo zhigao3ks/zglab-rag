@@ -100,6 +100,24 @@ class Settings(BaseSettings):
     # working while ask endpoints refuse to call the external provider.
     llm_enabled: bool = True
 
+    # Phase 12B Web Research Core. Fail-closed by default: the pipeline is
+    # not wired to any public endpoint yet and stays disabled until the
+    # Phase 12D product acceptance. The search API key only ever comes from
+    # environment/config — never code, tests, docs or logs.
+    web_research_enabled: bool = False
+    search_provider: str = "tavily"
+    search_api_key: str | None = Field(
+        default=None, validation_alias=AliasChoices("ZGLAB_RAG_SEARCH_API_KEY", "SEARCH_API_KEY")
+    )
+    search_timeout_seconds: float = 8.0
+    research_max_search_results: int = 6
+    research_max_fetch_candidates: int = 4
+    research_max_redirects: int = 3
+    research_fetch_timeout_seconds: float = 8.0
+    research_overall_timeout_seconds: float = 30.0
+    research_max_response_bytes: int = 1_572_864
+    research_max_extracted_chars: int = 8_000
+
     @model_validator(mode="after")
     def _validate_auth_cookie_security(self) -> Settings:
         """Refuse the insecure __Host- + Secure=false combination.
