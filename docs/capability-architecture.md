@@ -153,14 +153,18 @@ Capability 内部不自维护任何认证/配额状态。
 WebResearchSkill 产出 `EvidenceOrigin.WEB`，并继续复用同一 Grounded
 Generation + Citation Validation 基础。
 
-## 10. Future WebResearchSkill（Phase 12B+，本文档只留边界）
+## 10. WebResearchSkill（12B/12C 已实现，未注册进 Registry）
 
-- 落脚点：第二个注册进 `CapabilityRegistry` 的 Skill；
-- 复用：同一 Capability contract / CapabilityContext / 结果语义；
+- 现状：`research/` 提供完整 Research → Grounded Generation 内部链路
+  （见 `docs/web-research-runtime.md` 与 `docs/web-evidence-grounding.md`）；
+  `WebResearchSkill.answer()` 复用同一 Capability contract /
+  CapabilityContext / CapabilityResult 语义（origin=WEB）；
 - 边界（详见 `docs/web-research-skill.md`）：SearchProvider 可替换、
   SSRF 防护、Prompt Injection 边界、Web Evidence 不写入长期 Personal
-  Knowledge；
-- 12A **不实现**任何 SearchProvider / Web Fetcher / researching SSE。
+  Knowledge；citation URL 只能来自 provenance；
+- 尚未注册进 `CapabilityRegistry`，也没有任何 HTTP endpoint：产品接入、
+  Personal/Web 路由与公网 contract 属于 Phase 12D；
+- 12A 本身不实现任何 SearchProvider / Web Fetcher / researching SSE。
 
 ## 11. Future MCP Relationship（Phase 13，未开始）
 

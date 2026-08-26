@@ -344,9 +344,14 @@ Phase 9 历史契约保留在 `docs/public-api.md`。
 `docs/capability-architecture.md`。
 
 **Phase 12B（已实现）**：`src/zglab_rag/research/` 提供独立 bounded 的
-Web Research 管线（Search → Safe Fetch → Extract → ExternalEvidence），
-未接入公网 API 与 Grounded Generation；设计见
-`docs/web-research-runtime.md`。
+Web Research 管线（Search → Safe Fetch → Extract → ExternalEvidence）；
+设计见 `docs/web-research-runtime.md`。
+
+**Phase 12C（已实现）**：`ExternalEvidence[]` 经 `research/web_adapter.py`
+（W→E 确定性映射、origin=web、不伪造 chunk 身份）进入从 Phase 8 抽出的共享
+`generate_from_context()`，复用同一套 Citation Validation / repair / claims
+渲染；citation URL 只能来自 provenance；仅内部能力，未接入公网 API；设计见
+`docs/web-evidence-grounding.md`。
 
 Phase 12 首先把现有 RAG 变成一个稳定能力：
 
@@ -520,7 +525,7 @@ src/zglab_rag/
 ```text
 auth/           # Phase 11（已存在）
 capabilities/   # Phase 12A（已存在：PersonalKnowledgeSkill）
-research/       # Phase 12B（已存在：Web Research Core）
+research/       # Phase 12B/12C（已存在：Web Research Core + Evidence Grounding）
 mcp/            # Phase 13
 agent/          # Phase 14
 session/        # Phase 15

@@ -113,7 +113,8 @@ Personal Knowledge Skill
 Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ✅ 已实现
-Phase 12C   Evidence + Grounded Generation Integration  ⏳ 下一 Product Phase
+Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
+Phase 12D   Product Integration & Evaluation            ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -242,7 +243,7 @@ POST /api/v2/ask/stream
 
 ## Phase 12 — Agent Capability Foundation & Web Research
 
-状态：**12A / 12B 已实现；12C（Evidence + Grounded Generation Integration）未开始，等待明确授权。**
+状态：**12A / 12B / 12C 已实现；12D（Product Integration & Evaluation）未开始，等待明确授权。**
 
 原 2026-08-21 的 Web Research 设计顺延到本阶段。详见 `docs/web-research-skill.md`。
 
@@ -253,15 +254,17 @@ POST /api/v2/ask/stream
 - 实现 request-scoped `WebResearchSkill`（✅ 12B 已完成）；
 - SearchProvider abstraction（✅ 12B 已完成，Tavily + fake）；
 - Search → candidate selection → safe fetch → extraction → normalization（✅ 12B 已完成）；
-- External Evidence → Grounded Generation → Citation Validation（⏳ 12C）；
+- External Evidence → Grounded Generation → Citation Validation（✅ 12C 已完成，仅内部能力）；
 - SSRF / Prompt Injection / URL provenance 安全边界（✅ 12B 已建立；
-  Prompt Injection 的 LLM data boundary 在 12C 接入时生效）；
+  ✅ 12C 已把 Prompt Injection 的 LLM data boundary 接入 generation）；
 - Research Evaluation（⏳ 12D）。
 
 12A 设计与验收：`docs/capability-architecture.md`、
 `docs/evaluations/phase-12a-capability-foundation.md`；12B 设计与验收：
 `docs/web-research-runtime.md`、
-`docs/evaluations/phase-12b-web-research-core.md`。
+`docs/evaluations/phase-12b-web-research-core.md`；12C 设计与验收：
+`docs/web-evidence-grounding.md`、
+`docs/evaluations/phase-12c-web-evidence-grounding.md`。
 
 Phase 12 不实现完整 Session Evidence Reuse；旧文档中该部分移到 Phase 15。
 

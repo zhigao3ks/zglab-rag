@@ -23,8 +23,13 @@ Phase 14 Agent Planner 或 Phase 15 Session Context。
 > SearchProvider（Tavily）/ candidate selection / safe fetch（SSRF + DNS +
 > redirect 逐跳重验）/ 确定性 extraction / ExternalEvidence（untrusted、
 > URL provenance）。运行细节见 `docs/web-research-runtime.md`，验收见
-> `docs/evaluations/phase-12b-web-research-core.md`。Grounded Generation /
-> Citation 集成（12C）与产品集成（12D）未开始。
+> `docs/evaluations/phase-12b-web-research-core.md`。Phase 12C（Evidence +
+> Grounded Generation Integration）也已实现：ExternalEvidence 经 W→E
+> 确定性映射进入共享 Grounded Generation + Citation Validation（仅内部
+> 能力，未接入公网 API），见 `docs/web-evidence-grounding.md` 与
+> `docs/evaluations/phase-12c-web-evidence-grounding.md`。产品集成（12D）
+> 未开始。本文末尾的旧 Phase 12B/12C 子任务划分已被 `docs/roadmap-v2.md`
+> 的 12A–12D 拆分 supersede。
 
 ## 1. Motivation
 

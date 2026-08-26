@@ -102,7 +102,13 @@ def resolve_sources(
     evidence_ids: Sequence[str],
     evidence: Sequence[EvidenceItem],
 ) -> list[AnswerSource]:
-    """Map validated short evidence ids back to full public provenance."""
+    """Map validated short evidence ids back to full public provenance.
+
+    Works for both origins: personal items carry chunk locators; web items
+    carry url/domain locators with chunk identifiers left as None. The URL
+    of a web source always comes from the evidence provenance (Phase 12B
+    search/fetch chain), never from model output.
+    """
     by_id = {item.evidence_id: item for item in evidence}
     return [
         AnswerSource(
@@ -114,6 +120,9 @@ def resolve_sources(
             source_path=item.source_path,
             section_path=list(item.section_path),
             score=item.score,
+            origin=item.origin,
+            url=item.url,
+            domain=item.domain,
         )
         for evidence_id in evidence_ids
         if (item := by_id.get(evidence_id)) is not None

@@ -16,6 +16,18 @@ class GenerationStatus(StrEnum):
     FAILED = "failed"
 
 
+class EvidenceOrigin(StrEnum):
+    """Where generation evidence comes from (Phase 12C).
+
+    PERSONAL and WEB evidence share the grounded generation pipeline but
+    are never conflated: web pages are untrusted external data and can
+    never masquerade as personal knowledge chunks.
+    """
+
+    PERSONAL = "personal"
+    WEB = "web"
+
+
 class ProgressStage(StrEnum):
     """Execution stages reported by the optional progress observer.
 
@@ -33,16 +45,21 @@ ProgressCallback = Callable[[ProgressStage], None]
 
 
 class EvidenceItem(BaseModel):
-    """One retrieved chunk promoted into generation context with provenance.
+    """One evidence chunk promoted into generation context with provenance.
 
     The short evidence_id is only valid inside a single request; the LLM never
     sees chunk_id, source_path, revision or score.
+
+    Phase 12C additive evolution: ``origin`` distinguishes PERSONAL knowledge
+    chunks from WEB evidence. Web items carry ``url``/``domain`` locators and
+    leave the personal chunk identifiers (chunk_id / document_id / source_id)
+    as None — a web page is never faked into a knowledge.db chunk.
     """
 
     evidence_id: str = Field(pattern=r"^E[1-9][0-9]*$")
-    chunk_id: str
-    document_id: str
-    source_id: str
+    chunk_id: str | None = None
+    document_id: str | None = None
+    source_id: str | None = None
     source_path: str
     title: str
     section_path: list[str] = Field(default_factory=list)
@@ -51,6 +68,9 @@ class EvidenceItem(BaseModel):
     visibility: Visibility = Visibility.PUBLIC
     rank: int = Field(gt=0)
     score: float
+    origin: EvidenceOrigin = EvidenceOrigin.PERSONAL
+    url: str | None = None
+    domain: str | None = None
 
     @model_validator(mode="after")
     def enforce_public_evidence(self) -> EvidenceItem:
@@ -84,17 +104,25 @@ class GeneratedAnswer(BaseModel):
 
 
 class AnswerSource(BaseModel):
-    """Public citation target resolved from a short evidence id."""
+    """Public citation target resolved from a short evidence id.
+
+    Phase 12C additive evolution: ``origin`` plus optional ``url``/``domain``
+    let a source describe WEB evidence without breaking the frozen personal
+    contract; personal sources keep origin=personal and url=None.
+    """
 
     evidence_id: str
-    source_id: str
-    document_id: str
-    chunk_id: str
+    source_id: str | None = None
+    document_id: str | None = None
+    chunk_id: str | None = None
     title: str
     source_path: str
     section_path: list[str] = Field(default_factory=list)
     source_url: str | None = None
     score: float | None = None
+    origin: EvidenceOrigin = EvidenceOrigin.PERSONAL
+    url: str | None = None
+    domain: str | None = None
 
 
 class GroundedAnswer(BaseModel):

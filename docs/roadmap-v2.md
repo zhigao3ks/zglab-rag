@@ -39,7 +39,8 @@ Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
 Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ✅ 已实现
-Phase 12C   Evidence + Grounded Generation Integration  ⏳ 下一 Product Phase
+Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
+Phase 12D   Product Integration & Evaluation            ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -57,7 +58,10 @@ Phase 12A（Capability Foundation & PersonalKnowledgeSkill）已实现，见
 `docs/evaluations/phase-12a-capability-foundation.md`；Phase 12B（Web
 Research Core）已实现，见 `docs/web-research-runtime.md` 与
 `docs/evaluations/phase-12b-web-research-core.md`；Phase 12C（Evidence +
-Grounded Generation Integration）未开始，在获得明确授权前不得开始。
+Grounded Generation Integration）已实现（仅内部能力，未接入公网 API），见
+`docs/web-evidence-grounding.md` 与
+`docs/evaluations/phase-12c-web-evidence-grounding.md`；Phase 12D（Product
+Integration & Evaluation）未开始，在获得明确授权前不得开始。
 
 Evaluation 继续作为跨阶段基础设施，不重新成为独立 Phase。
 
@@ -170,6 +174,16 @@ Phase 12B 已完成的要点：
 - Web URL 必须来自系统真实检索结果；
 - Prompt Injection 与 SSRF 边界必须在第一版成立；
 - Web Research 不写入长期 Personal Knowledge。
+
+### Phase 12C — Evidence + Grounded Generation Integration ✅
+
+已实现：`ExternalEvidence[]` 经 `web_adapter`（W→E 确定性映射、origin=WEB、
+不伪造 chunk 身份）进入共享 `generate_from_context()`（从 Phase 8
+GroundedAnswerService 原样抽出），复用同一套结构化解析 / Citation
+Validation / repair / claims 渲染；web system prompt 第三人称并明确
+UNTRUSTED 边界；citation URL 只能来自 provenance；zero evidence 不调用
+LLM；`/api/v2/ask`、SSE 与公网契约零变化；验收见
+`docs/evaluations/phase-12c-web-evidence-grounding.md`。
 
 ### Phase 12 明确不做
 
@@ -320,6 +334,6 @@ docs/evaluations/phase-10-*.md
 
 当前唯一允许开始的下一 Product Phase 是：
 
-> **Phase 12C — Evidence + Grounded Generation Integration**（Phase 12 的
-> 12A — Capability Foundation 与 12B — Web Research Core 已完成；前提：
-> 获得明确授权）
+> **Phase 12D — Product Integration & Evaluation**（Phase 12 的 12A —
+> Capability Foundation、12B — Web Research Core 与 12C — Evidence +
+> Grounded Generation Integration 已完成；前提：获得明确授权）

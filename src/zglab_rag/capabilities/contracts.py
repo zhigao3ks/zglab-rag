@@ -22,9 +22,17 @@ from enum import StrEnum
 from typing import Protocol
 
 from zglab_rag.auth.models import AuthenticatedPrincipal
-from zglab_rag.generation.contracts import GenerationResult, GenerationStatus
+from zglab_rag.generation.contracts import (
+    EvidenceOrigin,
+    GenerationResult,
+    GenerationStatus,
+)
 
 PERSONAL_KNOWLEDGE_CAPABILITY_ID = "personal_knowledge"
+
+# EvidenceOrigin moved to zglab_rag.generation.contracts in Phase 12C so the
+# generation layer can mark PERSONAL vs WEB evidence; re-exported here so all
+# existing capability/research import paths keep working.
 
 
 class CapabilityStatus(StrEnum):
@@ -47,18 +55,6 @@ class CapabilityStatus(StrEnum):
         if status == GenerationStatus.INSUFFICIENT_EVIDENCE:
             return cls.INSUFFICIENT_EVIDENCE
         return cls.FAILED
-
-
-class EvidenceOrigin(StrEnum):
-    """Where a capability's evidence comes from.
-
-    Phase 12A only produces PERSONAL evidence; WEB is reserved so the
-    future WebResearchSkill has a clean foothold. This tag is advisory at
-    this stage — Phase 8 evidence models are NOT refactored.
-    """
-
-    PERSONAL = "personal"
-    WEB = "web"
 
 
 @dataclass(frozen=True, slots=True)
