@@ -339,6 +339,10 @@ Phase 9 历史契约保留在 `docs/public-api.md`。
 
 原 2026-08-21 冻结的 Web Research 设计已经顺延到 Phase 12，详见 `docs/web-research-skill.md`。
 
+**Phase 12A（已实现）**：现有 RAG 已封装为 `PersonalKnowledgeSkill`，API v2
+经 Capability boundary（`src/zglab_rag/capabilities/`）调用；设计见
+`docs/capability-architecture.md`。
+
 Phase 12 首先把现有 RAG 变成一个稳定能力：
 
 ```text
@@ -506,12 +510,12 @@ src/zglab_rag/
 └── storage/
 ```
 
-未来根据 Phase 渐进增加，而不是一次创建空壳：
+已增加与未来渐进增加（不一次创建空壳）：
 
 ```text
-auth/           # Phase 11
-skills/         # Phase 12
-research/       # Phase 12
+auth/           # Phase 11（已存在）
+capabilities/   # Phase 12A（已存在：PersonalKnowledgeSkill）
+research/       # Phase 12B
 mcp/            # Phase 13
 agent/          # Phase 14
 session/        # Phase 15

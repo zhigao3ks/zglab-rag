@@ -58,7 +58,8 @@ API / SSE / Vue SPA / Sources / insufficient-evidence 均已完成公网验证�
 ```text
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
 Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
-Phase 12    Agent Capability Foundation & Web Research  ← 下一 Product Phase
+Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
+Phase 12B   Web Research Core                           ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -111,6 +112,24 @@ zglab-rag backup --auth
 [`docs/api-v2.md`](docs/api-v2.md)；验收：
 [`docs/evaluations/phase-11-authentication-acceptance.md`](docs/evaluations/phase-11-authentication-acceptance.md)。
 
+## Phase 12A — Capability Foundation（已实现）
+
+现有 RAG 管线被封装为第一个受控能力 `PersonalKnowledgeSkill`，API v2 通过
+Capability boundary 调用它（wrap，不重写；公开响应与 SSE 契约零变化）：
+
+- 最小 Capability contract：`CapabilityRequest` 只含 `question`，客户端无法
+  控制 retrieval / visibility / provider；
+- `CapabilityResult` 区分 SUCCESS / INSUFFICIENT_EVIDENCE / FAILED，保留
+  Phase 8 “证据不足是业务结果不是异常”语义；
+- `CapabilityRegistry` 只做确定性注册/查找，不是 Planner；当前只注册
+  `personal_knowledge`；
+- AuthN / AuthZ / CSRF / quota / concurrency / kill switch 全部保持在
+  Capability 之前的安全门；登录（含 ADMIN）不解锁 private knowledge；
+- 未实现 Web Research / MCP / Planner（Phase 12B+ / 13 / 14）。
+
+设计：[`docs/capability-architecture.md`](docs/capability-architecture.md)；验收：
+[`docs/evaluations/phase-12a-capability-foundation.md`](docs/evaluations/phase-12a-capability-foundation.md)。
+
 ## Phase 12+ Agent 方向
 
 长期系统目标不是“RAG + 几个插件”，而是三类能力在统一 Agent Runtime 下组合：
@@ -129,7 +148,8 @@ zglab-rag backup --auth
        knowledge.db        Public Web       Tool Runtime
 ```
 
-- **Phase 12**：把现有 RAG 抽象为 PersonalKnowledgeSkill，并实现 request-scoped WebResearchSkill；
+- **Phase 12A（已完成）**：把现有 RAG 抽象为 PersonalKnowledgeSkill，建立最小 Capability contract / registry；
+- **Phase 12B（未开始）**：实现 request-scoped WebResearchSkill；
 - **Phase 13**：把适合机器调用的 `zglab-tools` 能力通过 MCP 暴露；
 - **Phase 14**：建立 Capability Registry、Router / Planner、Policy Engine、Bounded Executor；
 - **Phase 15**：再处理多轮 Session Context、Temporary Evidence Reuse、Tool Artifact Reuse；
@@ -147,6 +167,7 @@ Web Research 原冻结设计见 [`docs/web-research-skill.md`](docs/web-research
 - [`docs/public-api.md`](docs/public-api.md)：Phase 9 Public API v1 冻结记录
 - [`docs/authentication.md`](docs/authentication.md)：Phase 11 认证与访问控制设计
 - [`docs/api-v2.md`](docs/api-v2.md)：Phase 11 Authenticated API v2 契约
+- [`docs/capability-architecture.md`](docs/capability-architecture.md)：Phase 12A Capability Foundation 设计
 - [`docs/web-research-skill.md`](docs/web-research-skill.md)：Phase 12 Web Research 设计
 - [`docs/production-architecture.md`](docs/production-architecture.md)：Phase 10 生产架构
 - [`docs/evaluations/phase-10-production-acceptance.md`](docs/evaluations/phase-10-production-acceptance.md)：生产验收记录
@@ -169,6 +190,7 @@ zglab-rag/
 │   ├── api/
 │   ├── application/
 │   ├── auth/
+│   ├── capabilities/
 │   ├── domain/
 │   ├── embeddings/
 │   ├── evaluation/

@@ -110,8 +110,9 @@ Personal Knowledge Skill
 当前权威 Phase：
 
 ```text
-Phase 11    Authentication & Access Control             ← 当前阶段
-Phase 12    Agent Capability Foundation & Web Research
+Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
+Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
+Phase 12B   Web Research Core                           ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -240,20 +241,23 @@ POST /api/v2/ask/stream
 
 ## Phase 12 — Agent Capability Foundation & Web Research
 
-状态：**等待 Phase 11 生产迁移完成。**
+状态：**12A 已实现；12B（Web Research Core）未开始，等待明确授权。**
 
 原 2026-08-21 的 Web Research 设计顺延到本阶段。详见 `docs/web-research-skill.md`。
 
 目标：
 
-- 现有 RAG 抽象为 `PersonalKnowledgeSkill`；
-- 建立最小 Capability / Skill contract；
+- 现有 RAG 抽象为 `PersonalKnowledgeSkill`（✅ 12A 已完成）；
+- 建立最小 Capability / Skill contract（✅ 12A 已完成）；
 - 实现 request-scoped `WebResearchSkill`；
 - SearchProvider abstraction；
 - Search → candidate selection → safe fetch → extraction → normalization；
 - External Evidence → Grounded Generation → Citation Validation；
 - SSRF / Prompt Injection / URL provenance 安全边界；
 - Research Evaluation。
+
+12A 设计与验收：`docs/capability-architecture.md`、
+`docs/evaluations/phase-12a-capability-foundation.md`。
 
 Phase 12 不实现完整 Session Evidence Reuse；旧文档中该部分移到 Phase 15。
 

@@ -15,6 +15,8 @@ from zglab_rag.application.runtime import (
     build_embedding_components,
     build_llm_provider,
 )
+from zglab_rag.capabilities.personal_knowledge import build_capability_registry
+from zglab_rag.capabilities.registry import CapabilityRegistry
 from zglab_rag.config import Settings, get_settings
 from zglab_rag.generation.contracts import GenerationProvider
 from zglab_rag.generation.service import GroundedAnswerService
@@ -39,6 +41,9 @@ class ProductionRuntime:
         self.embedding_components = embedding_components
         self.llm_provider = llm_provider
         self.database = database
+        # Phase 12A: the capability boundary is app-scoped; the skill only
+        # wraps this runtime, so no heavy object is rebuilt per request.
+        self.capability_registry: CapabilityRegistry = build_capability_registry(self)
 
     @classmethod
     def create(

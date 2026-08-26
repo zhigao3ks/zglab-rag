@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from zglab_rag.api.concurrency import ConcurrencyGuard, ServiceBusyError
 from zglab_rag.api.main import create_app
 from zglab_rag.api.rate_limit import RateLimiter, RateLimitExceededError
+from zglab_rag.capabilities.personal_knowledge import build_capability_registry
 from zglab_rag.config import Settings
 from zglab_rag.generation.contracts import (
     AnswerSource,
@@ -83,6 +84,9 @@ class FakeRuntime:
         self.connection_open_count = 0
         self.connection_close_count = 0
         self.service_creation_count = 0
+        # Phase 12A: the API reaches GroundedAnswerService only through the
+        # capability boundary; the skill wraps this fake runtime verbatim.
+        self.capability_registry = build_capability_registry(self)
 
     @contextmanager
     def request_connection(self):

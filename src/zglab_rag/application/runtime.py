@@ -8,7 +8,9 @@ drift.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Protocol
 
@@ -223,3 +225,29 @@ class ApplicationRuntime:
             self.llm_provider,
             settings=self.settings,
         )
+
+    @contextmanager
+    def request_connection(self):
+        """Yield a request-scoped read-only SQLite connection.
+
+        Mirrors ProductionRuntime so both runtimes satisfy the capability
+        layer's KnowledgePipelineRuntime protocol.
+        """
+        connection = None
+        try:
+            connection = self.database.connect(read_only=True, initialize=False)
+            yield connection
+        finally:
+            if connection is not None:
+                connection.close()
+
+    @cached_property
+    def capability_registry(self):
+        """Phase 12A capability boundary wrapping this runtime.
+
+        Lazy import keeps the CLI path free of capability imports until the
+        boundary is actually used; the registry itself is app-scoped.
+        """
+        from zglab_rag.capabilities.personal_knowledge import build_capability_registry
+
+        return build_capability_registry(self)

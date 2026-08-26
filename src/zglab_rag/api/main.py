@@ -90,6 +90,12 @@ from zglab_rag.auth.errors import (
 from zglab_rag.auth.models import AuditEvent, AuthenticatedPrincipal
 from zglab_rag.auth.quota import UsageGuard
 from zglab_rag.auth.session import csrf_token_for
+from zglab_rag.capabilities.contracts import (
+    PERSONAL_KNOWLEDGE_CAPABILITY_ID,
+    CapabilityContext,
+    CapabilityRequest,
+)
+from zglab_rag.capabilities.errors import CapabilityTechnicalError
 from zglab_rag.config import Settings, get_settings
 from zglab_rag.generation.contracts import (
     GenerationResult,
@@ -383,7 +389,9 @@ def create_app(
 
         executor: ThreadPoolExecutor = app.state.executor
         try:
-            future = executor.submit(_execute_generation, runtime, question)
+            future = executor.submit(
+                _execute_generation, runtime, question, request_id=request_id
+            )
         except RuntimeError:
             # Executor was shut down (graceful shutdown in progress).
             guard.release()
@@ -903,7 +911,13 @@ def create_app(
 
         executor: ThreadPoolExecutor = app.state.executor
         try:
-            future = executor.submit(_execute_generation, app.state.runtime, question)
+            future = executor.submit(
+                _execute_generation,
+                app.state.runtime,
+                question,
+                request_id=request_id,
+                principal=principal,
+            )
         except RuntimeError:
             # Shutdown race: refund the quota, the work never started.
             _refund_v2_quota(principal)
@@ -960,7 +974,13 @@ def create_app(
             _refund_v2_quota(principal)
 
         return await _open_ask_stream(
-            app, request, question, request_id, settings, on_submit_failure=_refund_quota
+            app,
+            request,
+            question,
+            request_id,
+            settings,
+            on_submit_failure=_refund_quota,
+            principal=principal,
         )
 
     def _refund_v2_quota(principal: AuthenticatedPrincipal) -> None:
@@ -1089,21 +1109,33 @@ def _execute_generation(
     runtime: ApplicationRuntime | None,
     question: str,
     progress: ProgressCallback | None = None,
+    *,
+    request_id: str = "",
+    principal: AuthenticatedPrincipal | None = None,
 ) -> GenerationResult:
-    """Execute the blocking generation call.
+    """Execute the blocking generation call through the capability boundary.
 
-    This function runs in a thread pool to avoid blocking the async event
-    loop. The optional progress observer is forwarded to the service; the
-    non-stream endpoint always passes None.
+    Phase 12A: the API no longer calls GroundedAnswerService directly; it
+    invokes the registered PersonalKnowledgeSkill, which wraps the exact
+    same request-scoped connection + service pipeline. Technical failures
+    are unwrapped back to their original exceptions so the Phase 9 public
+    error mapping (PROVIDER_UNAVAILABLE / INTERNAL_ERROR) stays exact.
     """
     # Tests may inject a runtime; production runtime has already been
     # initialized by the application lifespan before serving requests.
     if runtime is None:
         runtime = _get_runtime()
 
-    with runtime.request_connection() as connection:
-        service = runtime.create_service(connection)
-        return service.answer(question, progress=progress)
+    skill = runtime.capability_registry.get(PERSONAL_KNOWLEDGE_CAPABILITY_ID)
+    context = CapabilityContext(request_id=request_id, principal=principal)
+    try:
+        result = skill.execute(
+            CapabilityRequest(question=question), context, progress=progress
+        )
+    except CapabilityTechnicalError as exc:
+        # Restore the pre-Phase-12 exception type for error mapping.
+        raise exc.original if exc.original is not None else exc from exc
+    return result.generation
 
 
 def _collect_generation(
@@ -1164,6 +1196,7 @@ async def _open_ask_stream(
     settings: Settings,
     *,
     on_submit_failure: callable | None = None,
+    principal: AuthenticatedPrincipal | None = None,
 ) -> Response:
     """Submit generation and open the status SSE stream.
 
@@ -1193,7 +1226,14 @@ async def _open_ask_stream(
 
     executor: ThreadPoolExecutor = app.state.executor
     try:
-        future = executor.submit(_execute_generation, runtime, question, _progress)
+        future = executor.submit(
+            _execute_generation,
+            runtime,
+            question,
+            _progress,
+            request_id=request_id,
+            principal=principal,
+        )
     except RuntimeError:
         # Executor was shut down (graceful shutdown in progress).
         if on_submit_failure is not None:
