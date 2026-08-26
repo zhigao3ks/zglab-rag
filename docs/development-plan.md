@@ -110,7 +110,7 @@ Personal Knowledge Skill
 当前权威 Phase：
 
 ```text
-Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
+Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
@@ -121,7 +121,7 @@ Phase 16    Owner Agent / Advanced Permissions
 
 ## Phase 11 — Authentication & Access Control
 
-状态：**已实现（11A / 11B / 11C / 11D），待生产迁移部署。**
+状态：**已实现（11A / 11B / 11C / 11D），2026-08-26 已完成生产迁移与验收并封板。**
 
 设计与验收：
 

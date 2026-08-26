@@ -57,7 +57,7 @@ API / SSE / Vue SPA / Sources / insufficient-evidence 均已完成公网验证�
 
 ```text
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
-Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
+Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
@@ -68,7 +68,7 @@ Phase 16    Owner Agent / Advanced Permissions
 
 完整新路线见 [`docs/roadmap-v2.md`](docs/roadmap-v2.md)。
 
-## Phase 11 — Authentication & Access Control（已实现）
+## Phase 11 — Authentication & Access Control（已完成并生产验收）
 
 访问模型为“展示公开，消费型 AI 能力登录后使用”：
 

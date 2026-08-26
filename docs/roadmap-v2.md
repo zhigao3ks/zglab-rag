@@ -36,7 +36,7 @@ Phase 0–10 已经完成了 Personal Knowledge Assistant 的核心基础设施�
 ```text
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
 
-Phase 11    Authentication & Access Control             ✅ 已实现（待生产迁移）
+Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ⏳ 下一 Product Phase
 Phase 13    MCP Tool Runtime
@@ -45,9 +45,11 @@ Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
 ```
 
-Phase 11 的实现与验收见 `docs/authentication.md`、`docs/api-v2.md` 与
-`docs/evaluations/phase-11-authentication-acceptance.md`；生产迁移步骤见
-验收文档第 5 节。
+Phase 11 已于 **2026-08-26** 完成生产迁移、真实 HTTPS 浏览器验收与运维验收并正式封板。
+实现与设计见 `docs/authentication.md`、`docs/api-v2.md`；本地验收见
+`docs/evaluations/phase-11-authentication-acceptance.md`；生产部署实录见
+`docs/phase-11-production-deployment-2026-08-26.md`；最终生产封板证据见
+`docs/evaluations/phase-11-production-acceptance-2026-08-26.md`。
 
 Phase 12A（Capability Foundation & PersonalKnowledgeSkill）已实现，见
 `docs/capability-architecture.md` 与
@@ -60,6 +62,8 @@ Post-v1 性能优化（Reranker 量化、cache、monitoring、latency、evaluati
 非编号优化轨道，不占用上述 Product Capability Phase 编号。
 
 ## 3. Phase 11 — Authentication & Access Control
+
+> **封板状态：2026-08-26 已完成生产部署与验收。除安全修复、运维修复和必要兼容性修复外，不再扩展 Phase 11 功能范围。**
 
 ### 目标
 
@@ -98,20 +102,21 @@ ask.zglab.fun
 
 Public API v1 是 Phase 9 的历史冻结契约，不重写其历史定义。
 
-Phase 11 应评估并优先使用新的 authenticated `/api/v2` 契约，例如：
+Phase 11 已落地 authenticated `/api/v2` 契约：
 
 ```text
 POST /api/v2/auth/login
 POST /api/v2/auth/logout
 GET  /api/v2/auth/me
 POST /api/v2/auth/activate
+POST /api/v2/auth/reset-password
 POST /api/v2/auth/change-password
 POST /api/v2/ask
 POST /api/v2/ask/stream
 ```
 
-旧 `/api/v1/ask` / `/api/v1/ask/stream` 在生产迁移完成后不得继续作为匿名的 LLM 消费入口。
-具体 retirement / compatibility policy 在 Phase 11 设计中冻结。
+旧 `/api/v1/ask` / `/api/v1/ask/stream` 在生产已退役为 `410 API_RETIRED`，
+不再作为匿名 LLM 消费入口。
 
 ### 子阶段
 
@@ -269,7 +274,7 @@ MCP Tool annotation 只能作为 hint；真正权限仍由 Agent Host / Policy E
 - `docs/development-plan.md`
 - `docs/architecture.md`
 - `docs/web-research-skill.md`
-- Phase 11 新增的 authentication / API v2 设计文档
+- Phase 11 authentication / API v2 / production acceptance 文档
 
 ### 历史验收记录
 
@@ -280,6 +285,9 @@ docs/evaluations/phase-7-*.md
 docs/evaluations/phase-9-*.md
 docs/evaluations/phase-10-*.md
 ```
+
+`docs/evaluations/phase-11-authentication-acceptance.md` 记录 2026-08-25 本地封装完成、
+生产尚未迁移时的真实状态；2026-08-26 的生产迁移与最终封板由独立生产验收文档记录。
 
 如果历史验收记录写有当时的 “future Phase 11”，它只表示当时的规划，不再具有当前 Roadmap 权威性。
 
@@ -303,4 +311,4 @@ docs/evaluations/phase-10-*.md
 当前唯一允许开始的下一 Product Phase 是：
 
 > **Phase 12B — Web Research Core**（Phase 12 的第一部分 12A — Capability
-> Foundation 已完成；前提：获得明确授权，且 Phase 11 已完成生产迁移）
+> Foundation 已完成；前提：获得明确授权）
