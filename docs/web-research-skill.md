@@ -27,9 +27,14 @@ Phase 14 Agent Planner 或 Phase 15 Session Context。
 > Grounded Generation Integration）也已实现：ExternalEvidence 经 W→E
 > 确定性映射进入共享 Grounded Generation + Citation Validation（仅内部
 > 能力，未接入公网 API），见 `docs/web-evidence-grounding.md` 与
-> `docs/evaluations/phase-12c-web-evidence-grounding.md`。产品集成（12D）
-> 未开始。本文末尾的旧 Phase 12B/12C 子任务划分已被 `docs/roadmap-v2.md`
-> 的 12A–12D 拆分 supersede。
+> `docs/evaluations/phase-12c-web-evidence-grounding.md`。Phase 12D
+> （产品接入与 Evaluation）也已完成本地实现与验收：确定性 capability
+> selection、mode / web source / researching SSE、独立成本边界、DNS
+> rebinding 关闭，见 `docs/web-research-product.md`、
+> `docs/evaluations/phase-12d-product-acceptance.md` 与
+> `docs/evaluations/phase-12-web-research-evaluation.md`。生产尚未开启
+> （真实 provider smoke 与生产验收未完成）。本文末尾的旧 Phase 12B/12C
+> 子任务划分已被 `docs/roadmap-v2.md` 的 12A–12D 拆分 supersede。
 
 ## 1. Motivation
 

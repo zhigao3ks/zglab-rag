@@ -20,7 +20,10 @@ export type PublicErrorCode =
   | "CSRF_REJECTED"
   | "QUOTA_EXCEEDED"
   | "SERVICE_DISABLED"
-  | "API_RETIRED";
+  | "API_RETIRED"
+  // Phase 12D capability-policy codes.
+  | "CAPABILITY_DISABLED"
+  | "CAPABILITY_DENIED";
 
 /** Frontend-only code for fetch/network/protocol failures. */
 export type FrontendErrorCode = PublicErrorCode | "NETWORK";
@@ -30,7 +33,14 @@ export interface PublicSource {
   title: string;
   section: string[];
   source_path: string;
+  /** Phase 12D additive fields; absent on legacy personal-only payloads. */
+  origin?: "personal" | "web";
+  url?: string | null;
+  domain?: string | null;
 }
+
+/** Phase 12D ask mode; validated again server-side, never a capability id. */
+export type AskMode = "auto" | "personal" | "web";
 
 export interface PublicAskResponse {
   request_id: string;
@@ -49,7 +59,12 @@ export interface PublicErrorResponse {
   error: PublicErrorDetail;
 }
 
-export type StreamStage = "accepted" | "retrieving" | "generating" | "validating";
+export type StreamStage =
+  | "accepted"
+  | "retrieving"
+  | "researching"
+  | "generating"
+  | "validating";
 
 export interface PublicStreamStatus {
   request_id: string;
@@ -68,6 +83,7 @@ export const QUESTION_MAX_LENGTH = 1000;
 export const STAGE_LABELS: Record<StreamStage, string> = {
   accepted: "已接收问题…",
   retrieving: "正在检索公开知识库…",
+  researching: "正在安全检索公开网络资料…",
   generating: "正在整理回答…",
   validating: "正在核验引用…",
 };
@@ -87,6 +103,8 @@ export const ERROR_LABELS: Record<FrontendErrorCode, string> = {
   QUOTA_EXCEEDED: "今日或本分钟的使用额度已达上限，请稍后再试。",
   SERVICE_DISABLED: "回答服务当前已被临时关闭，请稍后再试。",
   API_RETIRED: "该接口版本已停用，请刷新页面。",
+  CAPABILITY_DISABLED: "联网检索功能当前未开启。",
+  CAPABILITY_DENIED: "当前账号未获授权使用联网检索。",
   NETWORK: "网络连接异常，请稍后重试。",
 };
 
@@ -104,7 +122,9 @@ export function isPublicErrorCode(value: unknown): value is PublicErrorCode {
     value === "CSRF_REJECTED" ||
     value === "QUOTA_EXCEEDED" ||
     value === "SERVICE_DISABLED" ||
-    value === "API_RETIRED"
+    value === "API_RETIRED" ||
+    value === "CAPABILITY_DISABLED" ||
+    value === "CAPABILITY_DENIED"
   );
 }
 
@@ -112,6 +132,7 @@ export function isStreamStage(value: unknown): value is StreamStage {
   return (
     value === "accepted" ||
     value === "retrieving" ||
+    value === "researching" ||
     value === "generating" ||
     value === "validating"
   );

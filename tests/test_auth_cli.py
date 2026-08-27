@@ -35,7 +35,7 @@ def _activation_url_from(output: str) -> str:
 def test_auth_init_creates_database(cli_env: Path, capsys: pytest.CaptureFixture) -> None:
     assert main(["auth", "init"]) == 0
     captured = capsys.readouterr()
-    assert "schema_version=2" in captured.out
+    assert "schema_version=3" in captured.out
     assert cli_env.is_file()
 
 

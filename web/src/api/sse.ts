@@ -147,6 +147,7 @@ export function mapRawEvent(raw: RawSseEvent): StreamEvent | null {
   switch (raw.event) {
     case "accepted":
     case "retrieving":
+    case "researching":
     case "generating":
     case "validating": {
       const payload = asRecord(parseJson(raw.data)) as Partial<PublicStreamStatus>;
@@ -175,11 +176,30 @@ export function mapRawEvent(raw: RawSseEvent): StreamEvent | null {
         ) {
           throw new StreamPayloadError("invalid source payload");
         }
+        // Phase 12D additive fields stay optional and strictly typed:
+        // origin is either personal or web; url/domain are strings or null.
+        const origin: "personal" | "web" | undefined =
+          record.origin === "web"
+            ? "web"
+            : record.origin === "personal"
+              ? "personal"
+              : undefined;
+        const url =
+          typeof record.url === "string" ? record.url : record.url === null ? null : undefined;
+        const domain =
+          typeof record.domain === "string"
+            ? record.domain
+            : record.domain === null
+              ? null
+              : undefined;
         return {
           id: record.id,
           title: record.title,
           section: record.section.map((part) => String(part)),
           source_path: record.source_path,
+          origin,
+          url,
+          domain,
         };
       });
       return {

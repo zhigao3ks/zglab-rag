@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import type { AskMode } from "../api/contracts";
 import { QUESTION_MAX_LENGTH } from "../api/contracts";
 
 const props = defineProps<{
@@ -7,10 +8,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: "submit", question: string): void;
+  (event: "submit", question: string, mode: AskMode): void;
 }>();
 
 const draft = ref("");
+// Phase 12D: lightweight, user-controlled capability mode. The server
+// re-validates it; this control never represents authorization.
+const mode = ref<AskMode>("auto");
 
 const trimmed = computed(() => draft.value.trim());
 const canSend = computed(
@@ -22,7 +26,7 @@ function send(): void {
   if (!canSend.value) {
     return;
   }
-  emit("submit", trimmed.value);
+  emit("submit", trimmed.value, mode.value);
   draft.value = "";
 }
 
@@ -59,6 +63,14 @@ function onKeydown(event: KeyboardEvent): void {
         >
           {{ draft.length }} / {{ QUESTION_MAX_LENGTH }}
         </span>
+        <label class="composer__mode">
+          <span class="composer__mode-label">回答方式</span>
+          <select v-model="mode" class="composer__mode-select" data-testid="mode-select" :disabled="disabled">
+            <option value="auto">自动</option>
+            <option value="personal">个人知识库</option>
+            <option value="web">联网检索</option>
+          </select>
+        </label>
         <button
           type="submit"
           class="composer__send"
@@ -130,6 +142,28 @@ function onKeydown(event: KeyboardEvent): void {
 .composer__count--over {
   color: var(--danger);
   font-weight: 600;
+}
+
+.composer__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-small);
+  color: var(--text-muted);
+}
+
+.composer__mode-select {
+  font: inherit;
+  font-size: var(--font-size-small);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  padding: 2px 6px;
+}
+
+.composer__mode-select:disabled {
+  opacity: 0.45;
 }
 
 .composer__send {

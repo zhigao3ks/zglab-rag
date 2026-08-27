@@ -31,9 +31,15 @@ class QuotaConfig:
 
 
 class UsageGuard:
-    def __init__(self, connection: sqlite3.Connection, config: QuotaConfig | None = None) -> None:
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        config: QuotaConfig | None = None,
+        *,
+        table: str = "usage",
+    ) -> None:
         self.connection = connection
-        self.usage = UsageRepository(connection)
+        self.usage = UsageRepository(connection, table=table)
         self.config = config or QuotaConfig()
 
     def check_and_record(self, user_id: int, *, now: datetime | None = None) -> None:

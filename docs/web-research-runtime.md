@@ -87,8 +87,10 @@ Web Research 是 authenticated 用户可间接触发的服务器端出站请求�
 **任一**解析地址非公网即整体拒绝（public+private 混合解析视为危险信号）。
 DNS 失败同样拒绝。resolver 可注入（测试使用 fake，CI 不触公网）。
 
-残留风险（明示）：validate 与 connect 非原子，极端 DNS rebinding 仍有
-时间窗；带 TLS hostname 处理的 IP 连接 pinning 是后续加固项。
+残留风险（已关闭，Phase 12D）：validate 与 connect 原非原子，极端 DNS
+rebinding 有时间窗；12D 已通过 pinned resolution
+（`research/pinned_transport.py`，连接只到已验证 IP，TLS SNI / Host 保持
+hostname）关闭该窗口，见 `docs/web-research-product.md` §6。
 
 ## 8. Redirect Policy
 
@@ -205,7 +207,8 @@ fetched、evidence）/ status / 命中域名 / elapsed_ms`。
 
 ## 18. Known Limitations
 
-1. DNS rebinding 窗口未用连接 pinning 完全封死（见第 7 节残留风险）；
+1. DNS rebinding 窗口：12B 时未用连接 pinning 封死；**已由 12D pinned
+   resolution 关闭**（见第 7 节与 `docs/web-research-product.md` §6）；
 2. gzip/brotli 之外编码、HTTP/2 细节依赖 httpx 默认行为；
 3. 抽取为启发式确定性规则，非 Readability 级精度（12B 明确接受）；
 4. `CapabilityRegistry` 暂未注册 `web_research`：registry 存在 ≠ API 可

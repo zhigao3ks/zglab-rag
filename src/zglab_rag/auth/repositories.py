@@ -275,10 +275,18 @@ class CredentialTokenRepository:
 
 
 class UsageRepository:
-    """Per-user consumption counters (minute bucket + daily total)."""
+    """Per-user consumption counters (minute bucket + daily total).
 
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    Phase 12D: the same counter shape backs the separate web-research
+    bucket via ``table="web_usage"``; the default stays the frozen
+    personal-ask ``usage`` table.
+    """
+
+    def __init__(self, connection: sqlite3.Connection, *, table: str = "usage") -> None:
+        if table not in ("usage", "web_usage"):
+            raise ValueError(f"unknown usage table: {table!r}")
         self.connection = connection
+        self.table = table
 
     def counts(self, user_id: int, *, now: datetime | None = None) -> tuple[int, int]:
         """Return (requests_this_minute, requests_today) before recording."""
@@ -286,11 +294,11 @@ class UsageRepository:
         day = moment.strftime("%Y-%m-%d")
         minute = moment.strftime("%Y-%m-%dT%H:%M")
         minute_row = self.connection.execute(
-            "SELECT requests FROM usage WHERE user_id=? AND day=? AND minute=?",
+            f"SELECT requests FROM {self.table} WHERE user_id=? AND day=? AND minute=?",
             (user_id, day, minute),
         ).fetchone()
         day_row = self.connection.execute(
-            "SELECT COALESCE(SUM(requests), 0) FROM usage WHERE user_id=? AND day=?",
+            f"SELECT COALESCE(SUM(requests), 0) FROM {self.table} WHERE user_id=? AND day=?",
             (user_id, day),
         ).fetchone()
         return (
@@ -303,7 +311,7 @@ class UsageRepository:
         day = moment.strftime("%Y-%m-%d")
         minute = moment.strftime("%Y-%m-%dT%H:%M")
         self.connection.execute(
-            "INSERT INTO usage(user_id, day, minute, requests) VALUES (?, ?, ?, 1) "
+            f"INSERT INTO {self.table}(user_id, day, minute, requests) VALUES (?, ?, ?, 1) "
             "ON CONFLICT(user_id, day, minute) DO UPDATE SET requests=requests + 1",
             (user_id, day, minute),
         )
@@ -314,14 +322,14 @@ class UsageRepository:
         day = moment.strftime("%Y-%m-%d")
         minute = moment.strftime("%Y-%m-%dT%H:%M")
         self.connection.execute(
-            "UPDATE usage SET requests = MAX(requests - 1, 0) "
+            f"UPDATE {self.table} SET requests = MAX(requests - 1, 0) "
             "WHERE user_id=? AND day=? AND minute=?",
             (user_id, day, minute),
         )
 
     def prune_old(self, *, before_day: str) -> int:
         cursor = self.connection.execute(
-            "DELETE FROM usage WHERE day < ?", (before_day,)
+            f"DELETE FROM {self.table} WHERE day < ?", (before_day,)
         )
         return cursor.rowcount
 

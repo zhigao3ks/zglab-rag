@@ -233,7 +233,20 @@ class TestStreamHappyPath:
         assert completed["answer"] == "这是一个测试回答。"
         assert len(completed["sources"]) == 1
         source = completed["sources"][0]
-        assert set(source.keys()) == {"id", "title", "section", "source_path"}
+        assert set(source.keys()) == {
+            "id",
+            "title",
+            "section",
+            "source_path",
+            # Phase 12D additive fields: personal sources keep the frozen
+            # shape plus origin=personal and no URL locator.
+            "origin",
+            "url",
+            "domain",
+        }
+        assert source["origin"] == "personal"
+        assert source["url"] is None
+        assert source["domain"] is None
 
     def test_status_events_are_narrow(self) -> None:
         client, _, _, _ = _stream_client(_default_settings(), FakeProgressAnswerService())

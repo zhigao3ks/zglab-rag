@@ -4,6 +4,19 @@ import type { PublicSource } from "../api/contracts";
 defineProps<{
   sources: PublicSource[];
 }>();
+
+/**
+ * Phase 12D: web source titles may link out, but only to backend-validated
+ * http/https provenance URLs. Everything else (title, domain, snippet)
+ * is untrusted data and stays template-escaped — never v-html.
+ */
+function externalHref(source: PublicSource): string | undefined {
+  if (source.origin !== "web" || typeof source.url !== "string") {
+    return undefined;
+  }
+  const url = source.url;
+  return url.startsWith("https://") || url.startsWith("http://") ? url : undefined;
+}
 </script>
 
 <template>
@@ -18,11 +31,29 @@ defineProps<{
       >
         <span class="source-list__index">[{{ index + 1 }}]</span>
         <div class="source-list__body">
-          <p class="source-list__source-title">{{ source.title }}</p>
-          <p v-if="source.section.length > 0" class="source-list__breadcrumb">
+          <p class="source-list__source-title">
+            <a
+              v-if="externalHref(source)"
+              :href="externalHref(source)"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="source-list__link"
+              data-testid="source-link"
+            >{{ source.title }}</a>
+            <template v-else>{{ source.title }}</template>
+            <span
+              class="source-list__origin"
+              :class="source.origin === 'web' ? 'source-list__origin--web' : 'source-list__origin--personal'"
+              data-testid="source-origin"
+            >{{ source.origin === "web" ? "联网" : "知识库" }}</span>
+          </p>
+          <p v-if="source.origin === 'web' && source.domain" class="source-list__breadcrumb">
+            {{ source.domain }}
+          </p>
+          <p v-else-if="source.section.length > 0" class="source-list__breadcrumb">
             {{ source.section.join(" › ") }}
           </p>
-          <p class="source-list__path">{{ source.source_path }}</p>
+          <p v-if="source.origin !== 'web'" class="source-list__path">{{ source.source_path }}</p>
         </div>
       </li>
     </ol>
@@ -86,5 +117,29 @@ defineProps<{
   font-size: var(--font-size-small);
   color: var(--text-muted);
   overflow-wrap: anywhere;
+}
+
+.source-list__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.source-list__link:hover {
+  color: var(--accent);
+}
+
+.source-list__origin {
+  margin-left: var(--space-1);
+  font-size: var(--font-size-small);
+  border-radius: var(--radius-small);
+  padding: 0 6px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.source-list__origin--web {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 </style>

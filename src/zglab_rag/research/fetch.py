@@ -12,11 +12,11 @@ Hardening properties:
   exceeded the fetch aborts — no unbounded ``response.content`` reads;
 - content-type allowlist decided from the response header, never from the
   file extension;
-- connect + read timeout per request; overall budget checked by the caller.
-
-Residual risk (documented): validation and connect are not atomic, so a
-determined DNS-rebinding attacker could still race the window; IP-pinned
-connections with proper TLS hostname handling are future work.
+- connect + read timeout per request; overall budget checked by the caller;
+- pinned resolution (Phase 12D): each hop connects only to the exact IPs
+  that passed DNS validation, closing the rebinding TOCTOU window while
+  TLS hostname verification / SNI and the Host header stay hostname-based
+  (see research/pinned_transport.py).
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import httpx
 
 from zglab_rag.research.contracts import FetchFailureReason, ResearchBudget
 from zglab_rag.research.errors import UnsafeUrlError
+from zglab_rag.research.pinned_transport import PinnedHosts, build_pinned_transport
 from zglab_rag.research.url_safety import ALLOWED_SCHEMES, DnsResolver, validate_fetch_target
 
 
@@ -83,13 +84,18 @@ class SafeFetcher:
     def _fetch_or_fail(self, url: str) -> FetchOutcome:
         current_url = url
         chain: list[str] = []
+        # Pin registry for this fetch: every hop may add exactly one host
+        # after full validation. An injected transport (tests) bypasses
+        # pinning; production connections go through the pinned backend.
+        pins = PinnedHosts()
         for _hop in range(self._budget.max_redirects + 1):
             try:
-                validate_fetch_target(
+                target = validate_fetch_target(
                     current_url, self._resolver, allowed_schemes=self._allowed_schemes
                 )
             except UnsafeUrlError:
                 raise _FetchRejected(FetchFailureReason.SSRF_REJECTED) from None
+            pins.pin(target.host, target.addresses)
 
             headers = {
                 "User-Agent": self._budget.user_agent,
@@ -99,7 +105,11 @@ class SafeFetcher:
             with httpx.Client(
                 timeout=self._budget.fetch_timeout_seconds,
                 follow_redirects=False,
-                transport=self._transport,
+                transport=(
+                    self._transport
+                    if self._transport is not None
+                    else build_pinned_transport(pins)
+                ),
             ) as client:
                 with client.stream("GET", current_url, headers=headers) as response:
                     status = response.status_code

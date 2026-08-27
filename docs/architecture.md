@@ -353,6 +353,12 @@ Web Research 管线（Search → Safe Fetch → Extract → ExternalEvidence）�
 渲染；citation URL 只能来自 provenance；仅内部能力，未接入公网 API；设计见
 `docs/web-evidence-grounding.md`。
 
+**Phase 12D（本地完成，生产未开启）**：确定性非 LLM capability selection
+（auto/personal/web）把两个 Skill 接入 `/api/v2/ask(/stream)`；additive
+`mode` 与 web source（origin/url/domain）；SSE `researching`；独立 web
+quota / permission / 并发；DNS rebinding 以 pinned resolution 关闭；
+前端 mode 控件与安全外链；设计见 `docs/web-research-product.md`。
+
 Phase 12 首先把现有 RAG 变成一个稳定能力：
 
 ```text
@@ -525,7 +531,7 @@ src/zglab_rag/
 ```text
 auth/           # Phase 11（已存在）
 capabilities/   # Phase 12A（已存在：PersonalKnowledgeSkill）
-research/       # Phase 12B/12C（已存在：Web Research Core + Evidence Grounding）
+research/       # Phase 12B/12C/12D（已存在：Web Research Core + Evidence Grounding + 产品接入）
 mcp/            # Phase 13
 agent/          # Phase 14
 session/        # Phase 15

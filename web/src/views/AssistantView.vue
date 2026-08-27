@@ -5,6 +5,7 @@ import AssistantHeader from "../components/AssistantHeader.vue";
 import ConversationView from "../components/ConversationView.vue";
 import QuestionComposer from "../components/QuestionComposer.vue";
 import { askStream } from "../api/client";
+import type { AskMode } from "../api/contracts";
 import { QUESTION_MAX_LENGTH } from "../api/contracts";
 import type { AssistantTurn, ChatMessage } from "../conversation/types";
 import { authState, clearAuth, logout } from "../auth/store";
@@ -81,7 +82,7 @@ function updateLastAssistantTurn(turn: AssistantTurn): void {
   }
 }
 
-async function submit(rawQuestion: string): Promise<void> {
+async function submit(rawQuestion: string, mode: AskMode = "auto"): Promise<void> {
   const question = rawQuestion.trim();
   if (pending.value || question.length === 0 || question.length > QUESTION_MAX_LENGTH) {
     return;
@@ -126,6 +127,7 @@ async function submit(rawQuestion: string): Promise<void> {
         },
       },
       controller.signal,
+      mode,
     );
   } finally {
     pending.value = false;

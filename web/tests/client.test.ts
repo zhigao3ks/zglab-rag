@@ -72,13 +72,22 @@ describe("askStream", () => {
     expect(callbacks.onNetworkFailure).not.toHaveBeenCalled();
   });
 
-  it("sends only the question, never conversation history", async () => {
+  it("sends only the question plus default mode, never conversation history", async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseResponse(STAGES + COMPLETED));
     vi.stubGlobal("fetch", fetchMock);
     await askStream("第二个问题？", makeCallbacks(), new AbortController().signal);
 
     const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(init.body)).toEqual({ question: "第二个问题？" });
+    expect(JSON.parse(init.body)).toEqual({ question: "第二个问题？", mode: "auto" });
+  });
+
+  it("forwards an explicit capability mode when chosen", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse(STAGES + COMPLETED));
+    vi.stubGlobal("fetch", fetchMock);
+    await askStream("问题？", makeCallbacks(), new AbortController().signal, "web");
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ question: "问题？", mode: "web" });
   });
 
   it("maps pre-stream JSON errors (rate limited)", async () => {

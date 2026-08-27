@@ -112,7 +112,10 @@ gate、一次 repair、claims 确定性渲染完全一致。
   `WEB_RESEARCH_ENABLED=true` 才构造（此时才需要 SEARCH_API_KEY），关闭时
   返回 None。Personal 路径与 app 启动完全不依赖 SearchProvider。
 
-## 9. Known Risk（延续 12B）
+## 9. Known Risk（已于 12D 关闭）
 
-- DNS rebinding / TOCTOU：DNS 验证与 HTTP 连接之间仍存在理论窗口，保持记录，
-  作为 Phase 12D 生产验收的明确 Gate；不为 12C 引入复杂自定义 transport。
+- DNS rebinding / TOCTOU：12B/12C 期间 DNS 验证与 HTTP 连接之间存在理论
+  窗口；Phase 12D 以 pinned resolution（`research/pinned_transport.py`）
+  关闭：连接只建立到已验证的公网 IP，TLS SNI / Host 保持 hostname。
+  证据见 `tests/test_research_rebinding.py` 与
+  `docs/web-research-product.md` §6。

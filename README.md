@@ -61,8 +61,8 @@ Phase 11    Authentication & Access Control             ✅ 已完成并生产�
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ✅ 已实现
 Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
-Phase 12D   Product Integration & Evaluation            ⏳ 下一 Product Phase
-Phase 13    MCP Tool Runtime
+Phase 12D   Product Integration & Evaluation            ✅ 已实现（本地验收；生产未开启）
+Phase 13    MCP Tool Runtime                            ⏳ 下一 Product Phase
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
@@ -149,8 +149,8 @@ Query → SearchProvider（Tavily，每次恰好 1 次调用）
   TIMEOUT / TECHNICAL_FAILURE / POLICY_DISABLED；技术故障不等于“知识不存在”；
 - `ZGLAB_RAG_WEB_RESEARCH_ENABLED` 默认 false（fail-closed，至 12D 验收）；
   Search API Key 只经环境变量；
-- 未实现：researching SSE / Planner / MCP（12D+）；回答生成与 citation
-  集成已在 12C 完成（见下节）。
+- 未实现：Planner / MCP；回答生成与 citation
+  集成已在 12C 完成，产品接入（researching SSE / mode）在 12D 完成（见下）。
 
 运行时设计：[`docs/web-research-runtime.md`](docs/web-research-runtime.md)；验收：
 [`docs/evaluations/phase-12b-web-research-core.md`](docs/evaluations/phase-12b-web-research-core.md)。
@@ -178,6 +178,25 @@ ExternalEvidence[]（W1…Wn）
 设计：[`docs/web-evidence-grounding.md`](docs/web-evidence-grounding.md)；验收：
 [`docs/evaluations/phase-12c-web-evidence-grounding.md`](docs/evaluations/phase-12c-web-evidence-grounding.md)。
 
+## Phase 12D — Web Research Product Integration（本地验收；生产未开启）
+
+把 Personal 与 Web 两项能力安全接入 Authenticated API v2（`WEB_RESEARCH_ENABLED`
+仍默认 false，生产开启需真实 provider smoke 与验收）：
+
+- 确定性、非 LLM 的 capability selection：`mode = auto/personal/web`；
+  自我指涉优先 PERSONAL，时新意图去 WEB，模糊一律 PERSONAL（不浪费搜索成本）；
+- API additive：request 可选 `mode`；source 新增 `origin/url/domain`；
+  新错误码 `CAPABILITY_DISABLED` / `CAPABILITY_DENIED`；
+- SSE：web path 发 `researching`；personal path 不变；
+- 独立 web quota（分钟/天）、服务端权限策略、research 并发=1；
+- DNS rebinding TOCTOU 由 pinned resolution 关闭（TLS SNI / Host 不变）；
+- 前端：mode 选择控件、web source 安全外链（`target=_blank`
+  `rel=noopener noreferrer`，无 v-html）、researching 状态。
+
+设计：[`docs/web-research-product.md`](docs/web-research-product.md)；验收：
+[`docs/evaluations/phase-12d-product-acceptance.md`](docs/evaluations/phase-12d-product-acceptance.md)；
+评估：[`docs/evaluations/phase-12-web-research-evaluation.md`](docs/evaluations/phase-12-web-research-evaluation.md)。
+
 ## Phase 12+ Agent 方向
 
 长期系统目标不是“RAG + 几个插件”，而是三类能力在统一 Agent Runtime 下组合：
@@ -199,7 +218,7 @@ ExternalEvidence[]（W1…Wn）
 - **Phase 12A（已完成）**：把现有 RAG 抽象为 PersonalKnowledgeSkill，建立最小 Capability contract / registry；
 - **Phase 12B（已完成）**：SearchProvider / safe fetch / extraction / ExternalEvidence 的 Web Research Core；
 - **Phase 12C（已完成）**：External Evidence → 共享 Grounded Generation / Citation Validation（仅内部能力，未接入公网 API）；
-- **Phase 12D（未开始）**：产品集成（Personal/Web 路由、公网 contract）与 Research Evaluation；
+- **Phase 12D（本地完成，生产未开启）**：确定性 Personal/Web 选择、公网 contract（mode/web source/researching SSE）、独立成本边界与 Evaluation；
 - **Phase 13**：把适合机器调用的 `zglab-tools` 能力通过 MCP 暴露；
 - **Phase 14**：建立 Capability Registry、Router / Planner、Policy Engine、Bounded Executor；
 - **Phase 15**：再处理多轮 Session Context、Temporary Evidence Reuse、Tool Artifact Reuse；
@@ -220,6 +239,7 @@ Web Research 原冻结设计见 [`docs/web-research-skill.md`](docs/web-research
 - [`docs/capability-architecture.md`](docs/capability-architecture.md)：Phase 12A Capability Foundation 设计
 - [`docs/web-research-runtime.md`](docs/web-research-runtime.md)：Phase 12B Web Research 运行时设计
 - [`docs/web-evidence-grounding.md`](docs/web-evidence-grounding.md)：Phase 12C Web Evidence Grounding 设计
+- [`docs/web-research-product.md`](docs/web-research-product.md)：Phase 12D Web Research 产品接入与迁移 Runbook
 - [`docs/web-research-skill.md`](docs/web-research-skill.md)：Phase 12 Web Research 设计
 - [`docs/production-architecture.md`](docs/production-architecture.md)：Phase 10 生产架构
 - [`docs/evaluations/phase-10-production-acceptance.md`](docs/evaluations/phase-10-production-acceptance.md)：生产验收记录

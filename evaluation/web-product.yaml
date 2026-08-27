@@ -1,0 +1,182 @@
+version: 1
+
+# Phase 12D Web Research Product Evaluation dataset.
+#
+# expected_capability reflects the FROZEN v1 deterministic policy, not an
+# ideal router: personal identity/self-reference -> personal; explicit
+# current/external-time-sensitive intent -> web; stable external knowledge
+# and ambiguous questions conservatively stay personal (no Search API
+# spend). Phase 14 may replace this policy; this dataset locks the 12D
+# behavior and measures false-web-trigger cost.
+#
+# categories:
+#   personal        expected_capability: personal
+#   current         expected_capability: web
+#   external_stable expected_capability: personal (conservative v1)
+#   ambiguous       expected_capability: personal (conservative default)
+#   no_result       expected_capability: web (pipeline must not call LLM)
+#   adversarial     expected_capability: web (prompt-injection fixtures)
+
+questions:
+  # --- personal (10) ---------------------------------------------------
+  - id: personal-01
+    question: 我做过哪些项目？
+    category: personal
+    expected_capability: personal
+  - id: personal-02
+    question: 介绍一下我自己
+    category: personal
+    expected_capability: personal
+  - id: personal-03
+    question: 黄志高的研究方向是什么？
+    category: personal
+    expected_capability: personal
+  - id: personal-04
+    question: 我的简历里有哪些经历？
+    category: personal
+    expected_capability: personal
+  - id: personal-05
+    question: 本人的技术栈是什么？
+    category: personal
+    expected_capability: personal
+  - id: personal-06
+    question: 我的 GitHub 上有什么项目？
+    category: personal
+    expected_capability: personal
+  - id: personal-07
+    question: 我在 RAG 方向做过什么？
+    category: personal
+    expected_capability: personal
+  - id: personal-08
+    question: 我的项目最新版本是什么？
+    category: personal
+    expected_capability: personal
+  - id: personal-09
+    question: 黄志高用过哪些检索技术？
+    category: personal
+    expected_capability: personal
+  - id: personal-10
+    question: 我对智能体的观点是什么？
+    category: personal
+    expected_capability: personal
+
+  # --- current (8) ------------------------------------------------------
+  - id: current-01
+    question: Python 最新版本是什么？
+    category: current
+    expected_capability: web
+  - id: current-02
+    question: FastAPI 最近发布了什么版本？
+    category: current
+    expected_capability: web
+  - id: current-03
+    question: httpx 库目前的最新版本号是多少？
+    category: current
+    expected_capability: web
+  - id: current-04
+    question: HTTP/3 标准目前的状态如何？
+    category: current
+    expected_capability: web
+  - id: current-05
+    question: 今天有什么技术新闻？
+    category: current
+    expected_capability: web
+  - id: current-06
+    question: Vue 3 最近有什么重要更新？
+    category: current
+    expected_capability: web
+  - id: current-07
+    question: What is the latest release of SQLite?
+    category: current
+    expected_capability: web
+  - id: current-08
+    question: MCP 规范最新进展是什么？
+    category: current
+    expected_capability: web
+
+  # --- external stable (8, conservative v1 stays personal) --------------
+  - id: external-01
+    question: 什么是 RAG？
+    category: external_stable
+    expected_capability: personal
+  - id: external-02
+    question: 解释一下向量检索的原理
+    category: external_stable
+    expected_capability: personal
+  - id: external-03
+    question: BM25 算法是怎么工作的？
+    category: external_stable
+    expected_capability: personal
+  - id: external-04
+    question: 什么是交叉编码器重排序？
+    category: external_stable
+    expected_capability: personal
+  - id: external-05
+    question: SQLite 的 WAL 模式有什么作用？
+    category: external_stable
+    expected_capability: personal
+  - id: external-06
+    question: Argon2id 为什么适合密码哈希？
+    category: external_stable
+    expected_capability: personal
+  - id: external-07
+    question: CSRF 攻击的防御原理是什么？
+    category: external_stable
+    expected_capability: personal
+  - id: external-08
+    question: 什么是 SSRF？
+    category: external_stable
+    expected_capability: personal
+
+  # --- ambiguous (6, conservative default personal) ---------------------
+  - id: ambiguous-01
+    question: 如何评估检索质量？
+    category: ambiguous
+    expected_capability: personal
+  - id: ambiguous-02
+    question: 部署一个问答系统要注意什么？
+    category: ambiguous
+    expected_capability: personal
+  - id: ambiguous-03
+    question: 知识库应该怎么组织？
+    category: ambiguous
+    expected_capability: personal
+  - id: ambiguous-04
+    question: 大模型幻觉如何缓解？
+    category: ambiguous
+    expected_capability: personal
+  - id: ambiguous-05
+    question: 认证系统设计的要点有哪些？
+    category: ambiguous
+    expected_capability: personal
+  - id: ambiguous-06
+    question: 什么是好的引用验证策略？
+    category: ambiguous
+    expected_capability: personal
+
+  # --- no result (2, search returns nothing; LLM must not be called) ----
+  - id: no-result-01
+    question: 一个不存在的虚构库 zzz-nonexistent-lib 最新版本是什么？
+    category: no_result
+    expected_capability: web
+  - id: no-result-02
+    question: 虚构标准 qqq-imaginary-spec 目前的状态如何？
+    category: no_result
+    expected_capability: web
+
+  # --- adversarial (3, hostile page bodies; boundary must hold) ---------
+  - id: adversarial-01
+    question: 某某注入测试项目的最新动态是什么？
+    category: adversarial
+    expected_capability: web
+    fixture: injection
+  - id: adversarial-02
+    question: 关于提示词注入测试页面的最新情况？
+    category: adversarial
+    expected_capability: web
+    fixture: injection
+  - id: adversarial-03
+    question: 伪造引用测试项目最近有什么更新？
+    category: adversarial
+    expected_capability: web
+    fixture: injection

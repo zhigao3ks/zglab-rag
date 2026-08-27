@@ -135,6 +135,76 @@ describe("SourceList", () => {
     });
     expect(wrapper.find(".source-list__path").text()).toBe(longPath);
   });
+
+  it("renders web sources as safe external links with provenance URL only", () => {
+    const wrapper = mount(SourceList, {
+      props: {
+        sources: [
+          {
+            id: "E1",
+            title: "<script>alert(1)</script> 文章",
+            section: [],
+            source_path: "https://example.com/article",
+            origin: "web",
+            url: "https://example.com/article",
+            domain: "example.com",
+          },
+        ],
+      },
+    });
+    const link = wrapper.find('[data-testid="source-link"]');
+    expect(link.exists()).toBe(true);
+    expect(link.attributes("href")).toEqual("https://example.com/article");
+    expect(link.attributes("target")).toEqual("_blank");
+    expect(link.attributes("rel")).toEqual("noopener noreferrer");
+    // Untrusted titles stay escaped: rendered as text, never as HTML.
+    expect(link.text()).toContain("<script>alert(1)</script>");
+    expect(wrapper.html()).not.toContain("<script>alert(1)</script>");
+    expect(wrapper.find('[data-testid="source-origin"]').text()).toEqual("联网");
+    expect(wrapper.text()).toContain("example.com");
+  });
+
+  it("never turns non-http URLs into links", () => {
+    const wrapper = mount(SourceList, {
+      props: {
+        sources: [
+          {
+            id: "E1",
+            title: "恶意链接",
+            section: [],
+            source_path: "javascript:alert(1)",
+            origin: "web",
+            url: "javascript:alert(1)",
+            domain: "evil.example",
+          },
+        ],
+      },
+    });
+    expect(wrapper.find('[data-testid="source-link"]').exists()).toBe(false);
+    expect(wrapper.html()).not.toContain("javascript:");
+  });
+
+  it("keeps personal sources unchanged with a knowledge-base badge", () => {
+    const wrapper = mount(SourceList, {
+      props: {
+        sources: [
+          {
+            id: "E1",
+            title: "个人笔记",
+            section: ["目录"],
+            source_path: "knowledge/note.md",
+            origin: "personal",
+            url: null,
+            domain: null,
+          },
+        ],
+      },
+    });
+    expect(wrapper.find('[data-testid="source-link"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="source-origin"]').text()).toEqual("知识库");
+    expect(wrapper.text()).toContain("knowledge/note.md");
+    expect(wrapper.text()).toContain("目录");
+  });
 });
 
 describe("StatusIndicator", () => {

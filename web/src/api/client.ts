@@ -18,6 +18,7 @@
  */
 
 import type {
+  AskMode,
   PublicErrorCode,
   PublicAskResponse,
   StreamStage,
@@ -68,6 +69,7 @@ export async function askStream(
   question: string,
   callbacks: AskStreamCallbacks,
   signal: AbortSignal,
+  mode: AskMode = "auto",
 ): Promise<void> {
   let response: Response;
   try {
@@ -80,7 +82,7 @@ export async function askStream(
       method: "POST",
       credentials: "same-origin",
       headers,
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, mode }),
       signal,
     });
   } catch (error) {

@@ -114,8 +114,8 @@ Phase 11    Authentication & Access Control             ✅ 已完成并生产�
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ✅ 已实现
 Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
-Phase 12D   Product Integration & Evaluation            ⏳ 下一 Product Phase
-Phase 13    MCP Tool Runtime
+Phase 12D   Product Integration & Evaluation            ✅ 已实现（本地验收；生产未开启）
+Phase 13    MCP Tool Runtime                            ⏳ 下一 Product Phase
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
@@ -243,7 +243,7 @@ POST /api/v2/ask/stream
 
 ## Phase 12 — Agent Capability Foundation & Web Research
 
-状态：**12A / 12B / 12C 已实现；12D（Product Integration & Evaluation）未开始，等待明确授权。**
+状态：**12A / 12B / 12C / 12D 已完成本地实现与验收；生产尚未开启 Web Research（真实 provider smoke 与生产验收未完成，Phase 12 不得标记 PRODUCTION ACCEPTED）。**
 
 原 2026-08-21 的 Web Research 设计顺延到本阶段。详见 `docs/web-research-skill.md`。
 
@@ -256,15 +256,22 @@ POST /api/v2/ask/stream
 - Search → candidate selection → safe fetch → extraction → normalization（✅ 12B 已完成）；
 - External Evidence → Grounded Generation → Citation Validation（✅ 12C 已完成，仅内部能力）；
 - SSRF / Prompt Injection / URL provenance 安全边界（✅ 12B 已建立；
-  ✅ 12C 已把 Prompt Injection 的 LLM data boundary 接入 generation）；
-- Research Evaluation（⏳ 12D）。
+  ✅ 12C 已把 Prompt Injection 的 LLM data boundary 接入 generation；
+  ✅ 12D 以 pinned resolution 关闭 DNS rebinding TOCTOU）；
+- Product Integration：确定性 capability selection / mode / web source /
+  researching SSE / 独立 quota（✅ 12D 已完成，生产未开启）；
+- Research Evaluation（✅ 12D 已建立 dataset 与 offline harness；真实
+  provider smoke 仍为生产前置）。
 
 12A 设计与验收：`docs/capability-architecture.md`、
 `docs/evaluations/phase-12a-capability-foundation.md`；12B 设计与验收：
 `docs/web-research-runtime.md`、
 `docs/evaluations/phase-12b-web-research-core.md`；12C 设计与验收：
 `docs/web-evidence-grounding.md`、
-`docs/evaluations/phase-12c-web-evidence-grounding.md`。
+`docs/evaluations/phase-12c-web-evidence-grounding.md`；12D 产品接入与
+验收：`docs/web-research-product.md`、
+`docs/evaluations/phase-12d-product-acceptance.md`、
+`docs/evaluations/phase-12-web-research-evaluation.md`。
 
 Phase 12 不实现完整 Session Evidence Reuse；旧文档中该部分移到 Phase 15。
 

@@ -39,19 +39,25 @@ class PublicErrorCode(StrEnum):
     QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
     SERVICE_DISABLED = "SERVICE_DISABLED"
     API_RETIRED = "API_RETIRED"
+    # Phase 12D capability-policy codes: the web kill switch refused the
+    # request, or the account lacks the web-research permission.
+    CAPABILITY_DISABLED = "CAPABILITY_DISABLED"
+    CAPABILITY_DENIED = "CAPABILITY_DENIED"
 
 
 class PublicAskRequest(BaseModel):
     """Public ask request body.
 
-    The request is intentionally narrow: only the question is accepted.
-    Extra fields are rejected to prevent accidental or malicious parameter
-    injection.
+    The request stays narrow: question plus the additive Phase 12D ``mode``
+    selector (auto/personal/web). Arbitrary capability ids are never
+    accepted; unknown fields are still rejected outright. Clients that only
+    send ``question`` keep working unchanged (mode defaults to auto).
     """
 
     model_config = {"extra": "forbid"}
 
     question: str = Field(min_length=1)
+    mode: Literal["auto", "personal", "web"] = "auto"
 
 
 class PublicSource(BaseModel):
@@ -59,12 +65,20 @@ class PublicSource(BaseModel):
 
     Internal fields like chunk_id, document_id, revision, scores, and
     absolute paths are never exposed.
+
+    Phase 12D additive fields: ``origin`` distinguishes personal knowledge
+    from web evidence; web sources carry the provenance-validated ``url``
+    and ``domain`` (never model output). Personal sources keep the frozen
+    Phase 9 shape with origin=personal and url/domain absent.
     """
 
     id: str  # Evidence ID (E1, E2, ...)
     title: str
     section: list[str]
     source_path: str
+    origin: Literal["personal", "web"] = "personal"
+    url: str | None = None
+    domain: str | None = None
 
 
 class PublicAskResponse(BaseModel):
@@ -113,6 +127,7 @@ class PublicStreamStage(StrEnum):
 
     ACCEPTED = "accepted"
     RETRIEVING = "retrieving"
+    RESEARCHING = "researching"
     GENERATING = "generating"
     VALIDATING = "validating"
     COMPLETED = "completed"

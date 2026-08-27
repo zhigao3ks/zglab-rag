@@ -15,7 +15,7 @@ from pathlib import Path
 
 from zglab_rag.auth.errors import AuthDatabaseError
 
-AUTH_SCHEMA_VERSION = 2
+AUTH_SCHEMA_VERSION = 3
 
 AUTH_SCHEMA = """
 CREATE TABLE schema_metadata (
@@ -67,6 +67,15 @@ CREATE INDEX credential_tokens_user_purpose_idx
     ON credential_tokens(user_id, purpose);
 
 CREATE TABLE usage (
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    minute TEXT NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(user_id, day, minute),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE web_usage (
     user_id INTEGER NOT NULL,
     day TEXT NOT NULL,
     minute TEXT NOT NULL,
@@ -172,6 +181,14 @@ class AuthDatabase:
                     f"Unable to migrate auth schema v1 to v2: {exc}"
                 ) from exc
             version = 2
+        if version == 2 and migrate:
+            try:
+                migrate_v2_to_v3(connection)
+            except sqlite3.Error as exc:
+                raise AuthDatabaseError(
+                    f"Unable to migrate auth schema v2 to v3: {exc}"
+                ) from exc
+            version = 3
         if version != AUTH_SCHEMA_VERSION:
             raise AuthDatabaseError(
                 f"Unsupported auth schema version {version}; "
@@ -197,6 +214,34 @@ def migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
         )
         connection.execute(
             "UPDATE schema_metadata SET value='2' WHERE key='schema_version'"
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+    """Add the separate web-research quota bucket introduced in Phase 12D.
+
+    Web research cost is deliberately isolated from the ordinary ask
+    bucket, so a dedicated table (not a column change on ``usage``) keeps
+    both accounting paths simple and independently prunable.
+    """
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        connection.execute(
+            "CREATE TABLE web_usage (\n"
+            "    user_id INTEGER NOT NULL,\n"
+            "    day TEXT NOT NULL,\n"
+            "    minute TEXT NOT NULL,\n"
+            "    requests INTEGER NOT NULL DEFAULT 0,\n"
+            "    PRIMARY KEY(user_id, day, minute),\n"
+            "    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE\n"
+            ")"
+        )
+        connection.execute(
+            "UPDATE schema_metadata SET value='3' WHERE key='schema_version'"
         )
         connection.commit()
     except Exception:

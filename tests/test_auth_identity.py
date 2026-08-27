@@ -410,7 +410,7 @@ def test_pending_user_reset_does_not_mark_reset_required(
 
 
 def test_schema_v1_migrates_to_v2(tmp_path: Path) -> None:
-    """Existing v1 auth databases upgrade to v2 (credential_status)."""
+    """Existing v1 auth databases upgrade through v2 to the latest schema."""
     path = tmp_path / "auth.db"
     database = AuthDatabase(path)
     connection = database.connect(initialize=True)
@@ -435,6 +435,7 @@ def test_schema_v1_migrates_to_v2(tmp_path: Path) -> None:
         );
         INSERT INTO users SELECT * FROM users_backup;
         DROP TABLE users_backup;
+        DROP TABLE web_usage;
         UPDATE schema_metadata SET value='1' WHERE key='schema_version';
         """
     )
@@ -443,12 +444,20 @@ def test_schema_v1_migrates_to_v2(tmp_path: Path) -> None:
 
     upgraded = database.connect(initialize=True, migrate=True)
     try:
-        assert AuthDatabase.schema_version(upgraded) == 2
+        # Chained migration: v1 -> v2 (credential_status) -> v3 (web_usage).
+        assert AuthDatabase.schema_version(upgraded) == AUTH_SCHEMA_VERSION
         columns = {
             row["name"]
             for row in upgraded.execute("PRAGMA table_info(users)")
         }
         assert "credential_status" in columns
+        tables = {
+            row["name"]
+            for row in upgraded.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        assert "web_usage" in tables
     finally:
         upgraded.close()
 

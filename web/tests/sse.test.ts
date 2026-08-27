@@ -116,6 +116,14 @@ describe("mapRawEvent", () => {
     expect(event).toEqual({ kind: "stage", stage: "retrieving", requestId: "r1" });
   });
 
+  it("maps the web researching stage (Phase 12D)", () => {
+    const event = mapRawEvent({
+      event: "researching",
+      data: JSON.stringify({ request_id: "r1", stage: "researching" }),
+    });
+    expect(event).toEqual({ kind: "stage", stage: "researching", requestId: "r1" });
+  });
+
   it("maps completed events with sources", () => {
     const event = mapRawEvent({
       event: "completed",
@@ -131,6 +139,66 @@ describe("mapRawEvent", () => {
     expect(event?.kind).toEqual("completed");
     if (event?.kind === "completed") {
       expect(event.completed.sources[0].title).toEqual("标题");
+      // Legacy personal payloads keep working: additive fields optional.
+      expect(event.completed.sources[0].origin).toBeUndefined();
+    }
+  });
+
+  it("maps completed web sources with origin, url and domain", () => {
+    const event = mapRawEvent({
+      event: "completed",
+      data: JSON.stringify({
+        request_id: "r1",
+        status: "answered",
+        answer: "回答",
+        sources: [
+          {
+            id: "E1",
+            title: "外部文章",
+            section: [],
+            source_path: "https://example.com/a",
+            origin: "web",
+            url: "https://example.com/a",
+            domain: "example.com",
+          },
+        ],
+      }),
+    });
+    expect(event?.kind).toEqual("completed");
+    if (event?.kind === "completed") {
+      const source = event.completed.sources[0];
+      expect(source.origin).toEqual("web");
+      expect(source.url).toEqual("https://example.com/a");
+      expect(source.domain).toEqual("example.com");
+    }
+  });
+
+  it("rejects unknown origin values instead of trusting them", () => {
+    const event = mapRawEvent({
+      event: "completed",
+      data: JSON.stringify({
+        request_id: "r1",
+        status: "answered",
+        answer: "回答",
+        sources: [
+          {
+            id: "E1",
+            title: "标题",
+            section: [],
+            source_path: "x",
+            origin: "javascript",
+            url: { evil: true },
+          },
+        ],
+      }),
+    });
+    if (event?.kind === "completed") {
+      const source = event.completed.sources[0];
+      expect(source.origin).toBeUndefined();
+      expect(source.url).toBeUndefined();
+      expect(source.domain).toBeUndefined();
+    } else {
+      throw new Error("expected completed event");
     }
   });
 

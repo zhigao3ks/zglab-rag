@@ -37,6 +37,9 @@ class ProgressStage(StrEnum):
     """
 
     RETRIEVING = "retrieving"
+    # Phase 12D: emitted only on the web research product path (search +
+    # safe fetch + extraction); the personal path never emits it.
+    RESEARCHING = "researching"
     GENERATING = "generating"
     VALIDATING = "validating"
 

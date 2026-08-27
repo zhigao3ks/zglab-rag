@@ -118,6 +118,15 @@ class Settings(BaseSettings):
     research_max_response_bytes: int = 1_572_864
     research_max_extracted_chars: int = 8_000
 
+    # Phase 12D product cost boundary: web research gets its own quota
+    # bucket (never shared with ordinary personal asks), a dedicated
+    # concurrency limit (conservative on the 2 vCPU / 2 GiB instance) and
+    # a server-side permission policy.
+    web_research_requests_per_minute: int = 3
+    web_research_requests_per_day: int = 20
+    web_research_concurrency: int = Field(default=1, ge=1, le=4)
+    web_research_admin_only: bool = False
+
     @model_validator(mode="after")
     def _validate_auth_cookie_security(self) -> Settings:
         """Refuse the insecure __Host- + Secure=false combination.

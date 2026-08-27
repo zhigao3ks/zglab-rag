@@ -87,7 +87,7 @@ from zglab_rag.auth.errors import (
     SessionError,
     TokenError,
 )
-from zglab_rag.auth.models import AuditEvent, AuthenticatedPrincipal
+from zglab_rag.auth.models import AuditEvent, AuthenticatedPrincipal, UserRole
 from zglab_rag.auth.quota import UsageGuard
 from zglab_rag.auth.session import csrf_token_for
 from zglab_rag.capabilities.contracts import (
@@ -96,6 +96,7 @@ from zglab_rag.capabilities.contracts import (
     CapabilityRequest,
 )
 from zglab_rag.capabilities.errors import CapabilityTechnicalError
+from zglab_rag.capabilities.selection import AskMode, CapabilitySelection, select_capability
 from zglab_rag.config import Settings, get_settings
 from zglab_rag.generation.contracts import (
     GenerationResult,
@@ -104,6 +105,8 @@ from zglab_rag.generation.contracts import (
     ProgressStage,
 )
 from zglab_rag.generation.errors import GenerationError, ProviderFailure
+from zglab_rag.research.contracts import WEB_RESEARCH_CAPABILITY_ID
+from zglab_rag.research.skill import ResearchProgressStage
 from zglab_rag.sources.registry import SourceRegistry
 
 logger = logging.getLogger(__name__)
@@ -224,6 +227,12 @@ def create_app(
     app.state.auth_runtime = auth_runtime or AuthRuntime.from_settings(settings)
     app.state.concurrency_guard = concurrency_guard or ConcurrencyGuard(
         max_concurrent=settings.api_max_concurrent_requests
+    )
+    # Phase 12D: web research has its own conservative concurrency bound
+    # (default 1) on top of the global guard, so concurrent requests never
+    # download pages and call the Search API in parallel.
+    app.state.research_guard = ConcurrencyGuard(
+        max_concurrent=settings.web_research_concurrency
     )
     app.state.rate_limiter = rate_limiter or RateLimiter(
         max_requests=settings.api_rate_limit_requests,
@@ -768,11 +777,29 @@ def create_app(
             service.verify_csrf(session, csrf_header)
         return principal
 
-    def _v2_quota_gate(principal: AuthenticatedPrincipal, client_id: str, request_id: str) -> None:
-        """Atomic per-user quota check; audits and re-raises on denial."""
+    def _v2_quota_gate(
+        principal: AuthenticatedPrincipal,
+        client_id: str,
+        request_id: str,
+        *,
+        web: bool = False,
+    ) -> None:
+        """Atomic per-user quota check; audits and re-raises on denial.
+
+        Phase 12D: web research requests are counted in their own bucket
+        (``web_usage``), never in the ordinary ask bucket, so personal
+        quota and search-provider cost stay independent.
+        """
         auth_runtime: AuthRuntime = app.state.auth_runtime
         with auth_runtime.connection() as connection:
-            usage_guard = UsageGuard(connection, auth_runtime.quota_config(settings))
+            if web:
+                usage_guard = UsageGuard(
+                    connection,
+                    auth_runtime.web_quota_config(settings),
+                    table="web_usage",
+                )
+            else:
+                usage_guard = UsageGuard(connection, auth_runtime.quota_config(settings))
             try:
                 usage_guard.check_and_record(principal.user_id)
             except QuotaExceededError:
@@ -784,6 +811,41 @@ def create_app(
                     client_hint=client_id,
                 )
                 raise
+
+    def _v2_capability_gate(
+        question: str,
+        mode: AskMode,
+        principal: AuthenticatedPrincipal,
+        request_id: str,
+    ) -> tuple[CapabilitySelection, JSONResponse | None]:
+        """Deterministic capability selection + server-side policy.
+
+        Runs after AuthN/AuthZ/CSRF and before concurrency and quota, so
+        a rejected request consumes neither guard slots nor quota. There
+        is no LLM router: the policy is small, deterministic and
+        auditable via a single reason code.
+        """
+        selection = select_capability(
+            question, mode, web_research_enabled=settings.web_research_enabled
+        )
+        if selection.capability_id == WEB_RESEARCH_CAPABILITY_ID:
+            if not settings.web_research_enabled:
+                # Explicit web while the kill switch is off: safe failure,
+                # never a silent switch to personal knowledge.
+                return selection, _error_response(
+                    request_id,
+                    PublicErrorCode.CAPABILITY_DISABLED,
+                    "Web research is currently disabled",
+                    status_code=503,
+                )
+            if settings.web_research_admin_only and principal.role != UserRole.ADMIN:
+                return selection, _error_response(
+                    request_id,
+                    PublicErrorCode.CAPABILITY_DENIED,
+                    "Web research is not enabled for this account",
+                    status_code=403,
+                )
+        return selection, None
 
     async def _v2_ask_preflight(
         request: Request,
@@ -845,20 +907,23 @@ def create_app(
 
     def _v2_quota_then_error(
         principal: AuthenticatedPrincipal,
-        guard: ConcurrencyGuard,
+        guards: list[ConcurrencyGuard],
         request_id: str,
         client_id: str,
+        *,
+        web: bool = False,
     ) -> JSONResponse | None:
-        """Record quota after the concurrency slot is held.
+        """Record quota after the concurrency slot(s) are held.
 
         SERVICE_BUSY rejections happen before this step and never consume
-        quota; a quota-exceeded request releases the slot and does not
-        count itself (the atomic transaction rolls back).
+        quota; a quota-exceeded request releases every held slot and does
+        not count itself (the atomic transaction rolls back).
         """
         try:
-            _v2_quota_gate(principal, client_id, request_id)
+            _v2_quota_gate(principal, client_id, request_id, web=web)
         except QuotaExceededError as exc:
-            guard.release()
+            for guard in guards:
+                guard.release()
             return _error_response(
                 request_id,
                 PublicErrorCode.QUOTA_EXCEEDED,
@@ -892,6 +957,19 @@ def create_app(
         if length_error is not None:
             return length_error
 
+        selection, policy_error = _v2_capability_gate(
+            question, AskMode(body.mode), principal, request_id
+        )
+        if policy_error is not None:
+            return policy_error
+        is_web = selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
+        logger.info(
+            "request_id=%s selected_capability=%s selection_reason=%s",
+            request_id,
+            selection.capability_id,
+            selection.reason.value,
+        )
+
         try:
             guard.acquire()
         except ServiceBusyError:
@@ -903,16 +981,39 @@ def create_app(
                 status_code=503,
             )
 
+        held_guards = [guard]
+        if is_web:
+            research_guard: ConcurrencyGuard = app.state.research_guard
+            try:
+                research_guard.acquire()
+            except ServiceBusyError:
+                guard.release()
+                logger.warning(
+                    "service_busy error_code=SERVICE_BUSY capability=web_research"
+                )
+                return _error_response(
+                    request_id,
+                    PublicErrorCode.SERVICE_BUSY,
+                    "Service is busy; please retry later",
+                    status_code=503,
+                )
+            held_guards.append(research_guard)
+
         quota_error = _v2_quota_then_error(
-            principal, guard, request_id, getattr(request.state, "v2_client_id", "unknown")
+            principal,
+            held_guards,
+            request_id,
+            getattr(request.state, "v2_client_id", "unknown"),
+            web=is_web,
         )
         if quota_error is not None:
             return quota_error
 
         executor: ThreadPoolExecutor = app.state.executor
+        execute_fn = _execute_web_generation if is_web else _execute_generation
         try:
             future = executor.submit(
-                _execute_generation,
+                execute_fn,
                 app.state.runtime,
                 question,
                 request_id=request_id,
@@ -920,8 +1021,9 @@ def create_app(
             )
         except RuntimeError:
             # Shutdown race: refund the quota, the work never started.
-            _refund_v2_quota(principal)
-            guard.release()
+            _refund_v2_quota(principal, web=is_web)
+            for held in held_guards:
+                held.release()
             return _error_response(
                 request_id,
                 PublicErrorCode.SERVICE_BUSY,
@@ -929,6 +1031,8 @@ def create_app(
                 status_code=503,
             )
         future.add_done_callback(lambda _future: guard.release())
+        if is_web:
+            future.add_done_callback(lambda _future: held_guards[1].release())
         return _collect_generation(settings, future, request_id)
 
     @app.post("/api/v2/ask/stream")
@@ -953,6 +1057,19 @@ def create_app(
         if length_error is not None:
             return length_error
 
+        selection, policy_error = _v2_capability_gate(
+            question, AskMode(body.mode), principal, request_id
+        )
+        if policy_error is not None:
+            return policy_error
+        is_web = selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
+        logger.info(
+            "request_id=%s selected_capability=%s selection_reason=%s",
+            request_id,
+            selection.capability_id,
+            selection.reason.value,
+        )
+
         try:
             guard.acquire()
         except ServiceBusyError:
@@ -964,14 +1081,36 @@ def create_app(
                 status_code=503,
             )
 
+        held_guards = [guard]
+        if is_web:
+            research_guard: ConcurrencyGuard = app.state.research_guard
+            try:
+                research_guard.acquire()
+            except ServiceBusyError:
+                guard.release()
+                logger.warning(
+                    "service_busy error_code=SERVICE_BUSY capability=web_research"
+                )
+                return _error_response(
+                    request_id,
+                    PublicErrorCode.SERVICE_BUSY,
+                    "Service is busy; please retry later",
+                    status_code=503,
+                )
+            held_guards.append(research_guard)
+
         quota_error = _v2_quota_then_error(
-            principal, guard, request_id, getattr(request.state, "v2_client_id", "unknown")
+            principal,
+            held_guards,
+            request_id,
+            getattr(request.state, "v2_client_id", "unknown"),
+            web=is_web,
         )
         if quota_error is not None:
             return quota_error
 
         def _refund_quota() -> None:
-            _refund_v2_quota(principal)
+            _refund_v2_quota(principal, web=is_web)
 
         return await _open_ask_stream(
             app,
@@ -981,15 +1120,25 @@ def create_app(
             settings,
             on_submit_failure=_refund_quota,
             principal=principal,
+            execute=_execute_web_generation if is_web else _execute_generation,
+            extra_done_guards=held_guards[1:],
         )
 
-    def _refund_v2_quota(principal: AuthenticatedPrincipal) -> None:
+    def _refund_v2_quota(principal: AuthenticatedPrincipal, *, web: bool = False) -> None:
         auth_runtime: AuthRuntime = app.state.auth_runtime
         try:
             with auth_runtime.connection() as connection:
-                UsageGuard(connection, auth_runtime.quota_config(settings)).refund(
-                    principal.user_id
-                )
+                if web:
+                    usage_guard = UsageGuard(
+                        connection,
+                        auth_runtime.web_quota_config(settings),
+                        table="web_usage",
+                    )
+                else:
+                    usage_guard = UsageGuard(
+                        connection, auth_runtime.quota_config(settings)
+                    )
+                usage_guard.refund(principal.user_id)
         except Exception:
             logger.warning("quota_refund_failed user_id=%s", principal.user_id)
 
@@ -1138,6 +1287,67 @@ def _execute_generation(
     return result.generation
 
 
+def _execute_web_generation(
+    runtime: ApplicationRuntime | None,
+    question: str,
+    progress: ProgressCallback | None = None,
+    *,
+    request_id: str = "",
+    principal: AuthenticatedPrincipal | None = None,
+) -> GenerationResult:
+    """Execute the blocking web-research answer through the skill boundary.
+
+    Phase 12D: the API never calls ResearchService directly. The internal
+    research progress stages (search/fetch/extract) collapse into the
+    single public ``researching`` stage; generation and validation reuse
+    the existing stage names. Technical research failures (search
+    provider down, timeout) surface as ProviderFailure so the public
+    mapping answers PROVIDER_UNAVAILABLE — a safe failure that never
+    touches the personal path.
+    """
+    if runtime is None:
+        runtime = _get_runtime()
+
+    skill = getattr(runtime, "web_research_skill", None)
+    if skill is None:
+        # Kill switch off or runtime without web capability: the API gate
+        # should have refused earlier; fail closed instead of guessing.
+        raise GenerationError("web research capability is not available")
+
+    def research_progress(stage: ResearchProgressStage) -> None:
+        if progress is None:
+            return
+        if stage in (
+            ResearchProgressStage.SEARCHING,
+            ResearchProgressStage.FETCHING,
+            ResearchProgressStage.EXTRACTING,
+        ):
+            mapped = ProgressStage.RESEARCHING
+        elif stage == ResearchProgressStage.GENERATING:
+            mapped = ProgressStage.GENERATING
+        elif stage == ResearchProgressStage.VALIDATING:
+            mapped = ProgressStage.VALIDATING
+        else:  # pragma: no cover - exhaustive guard
+            return
+        # Collapse the three research sub-stages into one public event:
+        # the SSE contract stays small (no per-hop detail, no URLs).
+        if mapped != research_progress.last:
+            research_progress.last = mapped
+            progress(mapped)
+
+    research_progress.last = None
+
+    context = CapabilityContext(request_id=request_id, principal=principal)
+    result = skill.answer(
+        CapabilityRequest(question=question), context, progress=research_progress
+    )
+    if result.generation is None:
+        # Research infrastructure failure (no GenerationResult at all):
+        # distinct from "insufficient evidence", mapped to 503 upstream.
+        raise ProviderFailure(result.failure_reason or "web research failed")
+    return result.generation
+
+
 def _collect_generation(
     settings: Settings, future: Future, request_id: str
 ) -> PublicAskResponse | JSONResponse:
@@ -1197,6 +1407,8 @@ async def _open_ask_stream(
     *,
     on_submit_failure: callable | None = None,
     principal: AuthenticatedPrincipal | None = None,
+    execute: callable = None,
+    extra_done_guards: list[ConcurrencyGuard] | None = None,
 ) -> Response:
     """Submit generation and open the status SSE stream.
 
@@ -1205,9 +1417,15 @@ async def _open_ask_stream(
     executor rejects the submission (graceful shutdown race), the optional
     on_submit_failure hook runs first — v2 uses it to refund quota that
     was already counted for work that never started.
+
+    Phase 12D: ``execute`` selects the capability executor (personal by
+    default, web research for the v2 web path); ``extra_done_guards``
+    releases the capability-specific slots (e.g. the research guard) when
+    the task really completes.
     """
     runtime = app.state.runtime
     guard: ConcurrencyGuard = app.state.concurrency_guard
+    execute_fn = execute if execute is not None else _execute_generation
 
     # Thread -> async bridge. asyncio.Queue is not thread-safe, so the
     # worker thread only touches a stdlib SimpleQueue and wakes the event
@@ -1227,7 +1445,7 @@ async def _open_ask_stream(
     executor: ThreadPoolExecutor = app.state.executor
     try:
         future = executor.submit(
-            _execute_generation,
+            execute_fn,
             runtime,
             question,
             _progress,
@@ -1239,6 +1457,8 @@ async def _open_ask_stream(
         if on_submit_failure is not None:
             on_submit_failure()
         guard.release()
+        for extra in extra_done_guards or []:
+            extra.release()
         return _error_response(
             request_id,
             PublicErrorCode.SERVICE_BUSY,
@@ -1250,6 +1470,8 @@ async def _open_ask_stream(
     # or API timeout never releases it early; only the done callback
     # does. HTTP disconnect != generation cancellation.
     future.add_done_callback(lambda _future: guard.release())
+    for extra in extra_done_guards or []:
+        future.add_done_callback(lambda _future, _guard=extra: _guard.release())
     future.add_done_callback(_on_done)
 
     return StreamingResponse(
@@ -1430,6 +1652,9 @@ def _map_result_to_response(result: GenerationResult, request_id: str) -> Public
             title=source.title,
             section=source.section_path,
             source_path=source.source_path,
+            origin=source.origin.value,
+            url=source.url,
+            domain=source.domain,
         )
         for source in result.answer.sources
     ]

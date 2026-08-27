@@ -143,6 +143,14 @@ class AuthRuntime:
             requests_per_day=settings.auth_user_requests_per_day,
         )
 
+    @staticmethod
+    def web_quota_config(settings: Settings) -> QuotaConfig:
+        """Phase 12D: independent cost bucket for web research requests."""
+        return QuotaConfig(
+            requests_per_minute=settings.web_research_requests_per_minute,
+            requests_per_day=settings.web_research_requests_per_day,
+        )
+
     def identity_service(self, connection: sqlite3.Connection, settings: Settings):
         from zglab_rag.auth.audit import AuditLogger
 
