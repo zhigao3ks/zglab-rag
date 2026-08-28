@@ -10,6 +10,7 @@ from zglab_rag.agent.contracts import (
     WebResearchObservation,
 )
 from zglab_rag.agent.observations import AgentCapabilityExecutor
+from zglab_rag.agent.planning import AgentPlan, BoundedPlanner, PlanStatus, PlanStep, PlanStepType
 
 __all__ = [
     "AgentCapabilityExecutor",
@@ -20,4 +21,5 @@ __all__ = [
     "PersonalKnowledgeObservation",
     "ToolObservation",
     "WebResearchObservation",
+    "AgentPlan", "BoundedPlanner", "PlanStatus", "PlanStep", "PlanStepType",
 ]

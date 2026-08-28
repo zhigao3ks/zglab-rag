@@ -8,3 +8,6 @@ Personal/Web observation 保留原 `CapabilityResult`，其 Evidence/citation �
 或 fake source。当前没有 Router、Planner、LLM selection、loop、final synthesis 或 API 变更。
 
 Phase 14B 才可在此契约上实现 bounded Router/Planner（预留上限：约 4 steps、Web ≤1、MCP ≤3）。
+
+Phase 14B 已将该预留实现为 deterministic `BoundedPlanner`；输出仍只是验证后的 AgentPlan，执行与
+最终合成仍严格留给 14C。
