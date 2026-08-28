@@ -138,8 +138,11 @@ class Settings(BaseSettings):
     mcp_startup_timeout_seconds: float = 10.0
     mcp_call_timeout_seconds: float = 2.0
     mcp_shutdown_timeout_seconds: float = 5.0
-    mcp_max_request_bytes: int = 512 * 1024
-    mcp_max_response_bytes: int = 512 * 1024
+    # Match the Tool Core payload contract (256 KiB) and remain below the
+    # Node stdio transport's 1 MiB frame ceiling. The host must not quietly
+    # admit a materially larger payload than the deterministic tool boundary.
+    mcp_max_request_bytes: int = 256 * 1024
+    mcp_max_response_bytes: int = 256 * 1024
     mcp_max_concurrent_calls: int = Field(default=1, ge=1, le=4)
 
     @model_validator(mode="after")

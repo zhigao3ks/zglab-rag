@@ -116,9 +116,9 @@ chunk id。它与 Phase 12 的 `CapabilityResult`（GenerationResult/Evidence）
 
 ## 10. 输入 / 输出 Bound
 
-- Host 发送前校验 `arguments` 序列化字节数 ≤ `mcp_max_request_bytes`（默认 512 KiB，≤ server
-  1 MiB frame 上限），超限在发送前拒绝，server call 计数为 0。
-- Host 收到后校验 `result` 序列化字节数 ≤ `mcp_max_response_bytes`（默认 512 KiB），超限 →
+- Host 发送前校验 `arguments` 序列化字节数 ≤ `mcp_max_request_bytes`（默认 256 KiB，与 Tool
+  Core contract 一致，且低于 server 1 MiB frame 上限），超限在发送前拒绝，server call 计数为 0。
+- Host 收到后校验 `result` 序列化字节数 ≤ `mcp_max_response_bytes`（默认 256 KiB），超限 →
   `MCP_OUTPUT_TOO_LARGE`。
 
 ## 11. Deadline / Timeout

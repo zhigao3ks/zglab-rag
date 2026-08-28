@@ -16,11 +16,13 @@
 - 使用假的 `OPENAI_API_KEY`、`ZGLAB_RAG_SEARCH_API_KEY`、`ZGLAB_RAG_TEST_SECRET` 验证 child
   不继承 parent secret。child argv/cwd 只来自 owner config、无 shell。
 - Host allowlist 与 Node `tools/list` 的 10 个 tool 一致；extra `shell_exec` 被拒绝，缺少
-  expected tool 为 `MCP_CONTRACT_MISMATCH`。Host request/response limit 都是 512 KiB，小于
-  Tool Core 256 KiB payload contract 外层的 1 MiB stdio frame；oversize、malformed
+  expected tool 为 `MCP_CONTRACT_MISMATCH`。Host request/response limit 都是 256 KiB，与 Tool
+  Core payload contract 对齐且小于 1 MiB stdio frame；oversize、malformed
   structuredContent、unknown error code 等已由 MCP unit/integration tests 覆盖。
 
 本地测试：`zglab-tools` 156 tests + 26 MCP tests；`zglab-rag` MCP 相关 opt-in tests 22 passed。
+独立 harness 实测 protocol `2025-11-25`、server `zglab-tools-mcp@0.0.1`、tool count 10、
+startup 122.020 ms、9 个典型调用总计 36.967 ms、clean shutdown=true。
 
 ## 生产预检与 STOP
 
