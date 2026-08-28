@@ -52,9 +52,9 @@ Session Context 统一移动到 Phase 15。
 
 ```text
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅
-Phase 11    Authentication & Access Control             ← 当前阶段
-Phase 12    Agent Capability Foundation & Web Research
-Phase 13    MCP Tool Runtime
+Phase 11    Authentication & Access Control             ✅ SEALED
+Phase 12    Agent Capability Foundation & Web Research  ✅ SEALED
+Phase 13    MCP Tool Runtime                            ← 当前阶段（13A 已完成）
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
@@ -74,7 +74,7 @@ Phase 16    Owner Agent / Advanced Permissions
 
 历史 acceptance 文档中出现的 “future Phase 11” 只是当时的规划，不得据此开始开发 Web Research。
 
-当前在没有新的明确授权时，**不得实现 Web Research、MCP、Agent Planner、Session Memory 或 Owner Agent**。
+当前在未获得新的明确授权时，**不得实现 Phase 13B/13C/13D（MCP Server/Client）、Agent Planner、Session Memory 或 Owner Agent**。
 
 ## 2. Architectural Boundaries
 

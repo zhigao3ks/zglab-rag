@@ -41,7 +41,10 @@ Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ✅ 已实现
 Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
 Phase 12D   Product Integration & Evaluation            ✅ 已完成并生产验收/封板
-Phase 13    MCP Tool Runtime                            ⏳ 下一 Product Phase
+Phase 13A   Tool Core Boundary & MCP Contracts          ✅ 已完成
+Phase 13B   MCP Server Runtime                          ⏳
+Phase 13C   MCP Client + Capability Integration         ⏳
+Phase 13D   Security / Evaluation / Production          ⏳
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
@@ -243,6 +246,16 @@ MCP Server ──┘
 ```
 
 生产初版 MCP Server 应优先作为 localhost/internal capability，而不是直接暴露公网。
+
+### Phase 13A — Tool Core Boundary & MCP Contracts ✅
+
+已实现：`zglab-tools` 侧新增 `src/tool-core/`（Shared Tool Core + Tool Contract + Tool
+Registry + MCP schema 准备 + 确定性 Vitest 测试），复用既有 `src/tools/*/logic.ts` 纯逻辑、
+不复制算法；`zglab-rag` 侧新增 `docs/mcp-tool-runtime.md` 冻结跨仓库边界（Option B：MCP
+Server 放 `zglab-tools`，stdio transport，Python 不 import Node package）。第一批 10 个
+deterministic pure tool（JSON format/minify/validate、Base64、URL、text count/deduplicate、
+timestamp），统一 `side_effect=none`、`network_access=false`。MCP Server（13B）/ Client
+（13C）/ Security·Evaluation·Production（13D）尚未实现，详见 `docs/mcp-tool-runtime.md`。
 
 ## 6. Phase 14 — Agent Orchestrator
 
