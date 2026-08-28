@@ -328,8 +328,14 @@ Authentication 不能替代资源保护。
 实现上的完整安全顺序（`/api/v2/ask` 与 `/api/v2/ask/stream` 共用，SSE 无旁路）：
 
 ```text
-Request Validation → Kill Switch → Origin → Authentication → Authorization
-→ CSRF → Quota → Question length → Concurrency → GroundedAnswerService
+Request size / schema validation
+→ Origin → Authentication → Authorization → CSRF
+→ LLM kill switch
+→ Question length
+→ Capability selection / server-side policy
+→ Global + capability-specific concurrency
+→ Per-capability quota
+→ PersonalKnowledgeSkill / WebResearchSkill
 ```
 
 旧 `/api/v1` 由 `ZGLAB_RAG_API_V1_RETIRED` 控制退役（410 API_RETIRED），
