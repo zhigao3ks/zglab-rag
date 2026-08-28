@@ -282,6 +282,7 @@ def create_app(
             "/api/v2/ask/stream",
             "/api/v2/auth/login",
             "/api/v2/auth/activate",
+            "/api/v2/auth/reset-password",
             "/api/v2/auth/change-password",
         ):
             content_length = request.headers.get("content-length")
@@ -1609,8 +1610,9 @@ async def _stream_events(
 
     yield encode_sse_event(PublicStreamStage.COMPLETED.value, completed)
     logger.info(
-        "request_id=%s path=/api/v1/ask/stream status=%s",
+        "request_id=%s path=%s status=%s",
         request_id,
+        request.url.path,
         completed.status,
     )
 
