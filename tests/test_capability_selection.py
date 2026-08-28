@@ -77,6 +77,7 @@ class TestAutoSelection:
             "HTTP/3 标准目前的状态如何？",
             "今天有什么技术新闻？",
             "What is the latest release of FastAPI?",
+            "What is the current stable release of Python?",
         ],
     )
     def test_current_information_goes_web(self, question: str) -> None:

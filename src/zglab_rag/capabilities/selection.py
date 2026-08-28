@@ -79,6 +79,7 @@ _CURRENT_INFORMATION_MARKERS = (
     "最新发布",
     "最近发布",
     "latest",
+    "current",
     "current version",
 )
 
