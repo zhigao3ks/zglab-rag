@@ -116,7 +116,7 @@ Phase 12B   Web Research Core                           ✅ 已实现
 Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
 Phase 12D   Product Integration & Evaluation            ✅ 已完成并生产验收/封板
 Phase 13A   Tool Core Boundary & MCP Contracts          ✅ 已完成
-Phase 13B   MCP Server Runtime                          ⏳
+Phase 13B   MCP Server Runtime                          ✅ 已完成
 Phase 13C   MCP Client + Capability Integration         ⏳
 Phase 13D   Security / Evaluation / Production          ⏳
 Phase 14    Agent Orchestrator

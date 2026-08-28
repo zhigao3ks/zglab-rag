@@ -425,7 +425,8 @@ MCP 用于确定性执行能力，不用于替代 Evidence Research。
 Phase 13A（Tool Core Boundary & MCP Contracts）已完成：`zglab-tools` 新增 `src/tool-core/`
 （Shared Tool Core + Tool Registry + typed/bounded contract，复用既有纯逻辑、不复制算法），
 第一批 10 个 deterministic pure tool；`docs/mcp-tool-runtime.md` 冻结跨仓库边界（Option B：
-MCP Server 放 `zglab-tools`，stdio transport）。13B/13C/13D 未实现。
+MCP Server 放 `zglab-tools`，stdio transport）。13B 已实现 stdio MCP Server（`src/mcp/`，
+见 `docs/mcp-server.md`）；13C/13D 未实现。
 
 ```text
 zglab-tools
@@ -434,7 +435,7 @@ zglab-tools
    │
    └── Shared Tool Core（src/tool-core，13A 已落地）
           ↑
-       MCP Server（13B，未实现）
+       MCP Server（src/mcp，13B 已实现）
 ```
 
 第一批（13A）：JSON format/minify/validate、Base64、URL、text count/deduplicate、timestamp。

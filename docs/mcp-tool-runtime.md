@@ -1,13 +1,13 @@
 # MCP Tool Runtime 设计（Phase 13）
 
-> 权威 Phase 路线见 `docs/roadmap-v2.md`。本文是 Phase 13 的技术设计：Phase 13A 已落地，
-> Phase 13B / 13C / 13D 仅设计、尚未实现。
+> 权威 Phase 路线见 `docs/roadmap-v2.md`。本文是 Phase 13 的技术设计：Phase 13A / 13B 已落地，
+> Phase 13C / 13D 仅设计、尚未实现。
 
 ## 0. 状态
 
 ```text
 Phase 13A — Tool Core Boundary & MCP Contracts       ✅ 已完成（本文 §3–§10）
-Phase 13B — MCP Server Runtime                       ⏳ 未开始（本文 §11）
+Phase 13B — MCP Server Runtime                       ✅ 已完成（本文 §11）
 Phase 13C — MCP Client + Capability Integration      ⏳ 未开始（本文 §12）
 Phase 13D — Security / Evaluation / Production       ⏳ 未开始（本文 §13）
 ```
@@ -176,22 +176,37 @@ Tool Observation
 contract，不是网页 Evidence，不需要伪造 citation。Phase 14 才建立统一的 `AgentObservation`，
 本阶段不得提前实现。
 
-## 11. Phase 13B — MCP Server Runtime（只设计，未实现）
+## 11. Phase 13B — MCP Server Runtime ✅ 已完成
 
 ```text
 zglab-tools ToolRegistry
         ↓
-MCP Server
+MCP Adapter（src/mcp/adapter.ts）
+        ↓
+MCP Server（src/mcp/server.ts，官方 SDK 底层 Server）
         ↓ stdio
 ```
 
-范围：`tools/list` / `tools/call`、schema exposure、timeouts、output bounds、safe errors、
-process lifecycle。**transport 冻结为 stdio**：无需公网端口、不增加 Nginx、不需要 MCP 独立
-公网 Auth、process boundary 简单、`zglab-rag` 可作为 host 启动/连接。不实现公网
-`https://tools.zglab.fun/mcp`。
+已实现（位于 `zglab-tools/src/mcp/`）：
 
-SDK 选择（13B 再定，以当前真实官方版本为准）：优先 `@modelcontextprotocol/sdk`，需确认稳定
-版本、Node 兼容、license 与 stdio transport 支持；13A 不引入该运行时依赖。
+- 官方 `@modelcontextprotocol/sdk` **1.30.0**（MIT，Node >=18）stdio server，只暴露
+  `createToolRegistry()` 的 10 个 allowlisted tool（UI 目录 `src/config/tools.ts` 不是 allowlist）。
+- `tools/list` 返回 13A raw JSON Schema（单一真相，不写 Zod）；`tools/call` 只走
+  `ToolRegistry.execute`（lookup + size + 窄化校验 + 输出 bound + 错误归一化），无 eval / 动态
+  import / fuzzy match。
+- **transport 冻结为 stdio**：无公网端口、无 Nginx、无 MCP HTTP Auth；不实现
+  `https://tools.zglab.fun/mcp`。
+- 第一道 size gate = `StdioServerTransport.maxBufferSize = 1 MiB`（官方硬帧上限，超限在
+  parse/dispatch 前拒绝）；第二道 = 每工具 256 KiB。
+- 结果映射：`structuredContent.result` 携带权威结果、`content` 文本作 JSON 兼容层；工具错误
+  映射为 `isError:true` 安全结果，不泄露 stack / 绝对路径 / 原始异常。
+- stdout 协议专用（无 banner / console.log / stack），诊断只走 stderr；SIGINT / SIGTERM /
+  stdin close 干净退出。
+- 真实官方 MCP Client integration test 通过（initialize → tools/list → tools/call + adversarial）。
+
+超时语义（如实记录）：13B 仍为 **advertised policy 而非 in-process 抢占**（10 个工具都是有界
+同步纯函数；普通 `Promise.race` 无法打断同步 CPU loop）；hard process/request deadline 由 13C
+的 host 补齐。详见 `zglab-tools/docs/mcp-server.md`。
 
 ## 12. Phase 13C — MCP Client + Capability Integration（只设计，未实现）
 

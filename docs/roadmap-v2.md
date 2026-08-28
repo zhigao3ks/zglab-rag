@@ -42,7 +42,7 @@ Phase 12B   Web Research Core                           ✅ 已实现
 Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
 Phase 12D   Product Integration & Evaluation            ✅ 已完成并生产验收/封板
 Phase 13A   Tool Core Boundary & MCP Contracts          ✅ 已完成
-Phase 13B   MCP Server Runtime                          ⏳
+Phase 13B   MCP Server Runtime                          ✅ 已完成
 Phase 13C   MCP Client + Capability Integration         ⏳
 Phase 13D   Security / Evaluation / Production          ⏳
 Phase 14    Agent Orchestrator
@@ -256,6 +256,17 @@ Server 放 `zglab-tools`，stdio transport，Python 不 import Node package）�
 deterministic pure tool（JSON format/minify/validate、Base64、URL、text count/deduplicate、
 timestamp），统一 `side_effect=none`、`network_access=false`。MCP Server（13B）/ Client
 （13C）/ Security·Evaluation·Production（13D）尚未实现，详见 `docs/mcp-tool-runtime.md`。
+
+### Phase 13B — MCP Server Runtime ✅
+
+已实现（`zglab-tools/src/mcp/`）：官方 `@modelcontextprotocol/sdk` 1.30.0 的 stdio server，
+只暴露 `createToolRegistry()` 的 10 个 allowlisted tool；`tools/list` 复用 13A raw JSON
+Schema、`tools/call` 只走 `ToolRegistry.execute`；第一道 size gate =
+`StdioServerTransport.maxBufferSize = 1 MiB`，第二道 = 每工具 256 KiB；`structuredContent`
+携带权威结果、`content` 文本作兼容层；工具错误映射为 `isError:true` 安全结果；stdout 协议
+专用、诊断走 stderr；SIGINT/SIGTERM/stdin close 干净退出。真实官方 MCP Client integration
+test 通过。超时仍为 advertised policy 而非 in-process 抢占（13C 补齐 host deadline）。详见
+`zglab-tools/docs/mcp-server.md`。
 
 ## 6. Phase 14 — Agent Orchestrator
 
