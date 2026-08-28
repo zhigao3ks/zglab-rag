@@ -15,7 +15,7 @@ from pathlib import Path
 
 from zglab_rag.auth.errors import AuthDatabaseError
 
-AUTH_SCHEMA_VERSION = 3
+AUTH_SCHEMA_VERSION = 4
 
 AUTH_SCHEMA = """
 CREATE TABLE schema_metadata (
@@ -84,6 +84,15 @@ CREATE TABLE web_usage (
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE agent_usage (
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    minute TEXT NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(user_id, day, minute),
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE audit_events (
     id INTEGER PRIMARY KEY,
     created_at TEXT NOT NULL,
@@ -127,9 +136,7 @@ class AuthDatabase:
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
         try:
-            self._validate_or_initialize(
-                connection, initialize=initialize, migrate=migrate
-            )
+            self._validate_or_initialize(connection, initialize=initialize, migrate=migrate)
         except Exception:
             connection.close()
             raise
@@ -149,9 +156,7 @@ class AuthDatabase:
                 "SELECT 1 FROM sqlite_master WHERE type IN ('table', 'view') LIMIT 1"
             ).fetchone()
             if has_any_table or not initialize:
-                raise AuthDatabaseError(
-                    "Database is not an initialized ZGLab auth database"
-                )
+                raise AuthDatabaseError("Database is not an initialized ZGLab auth database")
             try:
                 connection.execute("BEGIN IMMEDIATE")
                 connection.executescript(AUTH_SCHEMA)
@@ -177,22 +182,23 @@ class AuthDatabase:
             try:
                 migrate_v1_to_v2(connection)
             except sqlite3.Error as exc:
-                raise AuthDatabaseError(
-                    f"Unable to migrate auth schema v1 to v2: {exc}"
-                ) from exc
+                raise AuthDatabaseError(f"Unable to migrate auth schema v1 to v2: {exc}") from exc
             version = 2
         if version == 2 and migrate:
             try:
                 migrate_v2_to_v3(connection)
             except sqlite3.Error as exc:
-                raise AuthDatabaseError(
-                    f"Unable to migrate auth schema v2 to v3: {exc}"
-                ) from exc
+                raise AuthDatabaseError(f"Unable to migrate auth schema v2 to v3: {exc}") from exc
             version = 3
+        if version == 3 and migrate:
+            try:
+                migrate_v3_to_v4(connection)
+            except sqlite3.Error as exc:
+                raise AuthDatabaseError(f"Unable to migrate auth schema v3 to v4: {exc}") from exc
+            version = 4
         if version != AUTH_SCHEMA_VERSION:
             raise AuthDatabaseError(
-                f"Unsupported auth schema version {version}; "
-                f"expected {AUTH_SCHEMA_VERSION}"
+                f"Unsupported auth schema version {version}; expected {AUTH_SCHEMA_VERSION}"
             )
 
     @staticmethod
@@ -212,9 +218,7 @@ def migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
             "ALTER TABLE users ADD COLUMN credential_status TEXT NOT NULL "
             "DEFAULT 'VALID' CHECK(credential_status IN ('VALID', 'RESET_REQUIRED'))"
         )
-        connection.execute(
-            "UPDATE schema_metadata SET value='2' WHERE key='schema_version'"
-        )
+        connection.execute("UPDATE schema_metadata SET value='2' WHERE key='schema_version'")
         connection.commit()
     except Exception:
         connection.rollback()
@@ -240,9 +244,24 @@ def migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
             "    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE\n"
             ")"
         )
+        connection.execute("UPDATE schema_metadata SET value='3' WHERE key='schema_version'")
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def migrate_v3_to_v4(connection: sqlite3.Connection) -> None:
+    """Add the isolated Phase 14 agent quota bucket atomically."""
+    connection.execute("BEGIN IMMEDIATE")
+    try:
         connection.execute(
-            "UPDATE schema_metadata SET value='3' WHERE key='schema_version'"
+            "CREATE TABLE IF NOT EXISTS agent_usage ("
+            "user_id INTEGER NOT NULL, day TEXT NOT NULL, minute TEXT NOT NULL, "
+            "requests INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id, day, minute), "
+            "FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE)"
         )
+        connection.execute("UPDATE schema_metadata SET value='4' WHERE key='schema_version'")
         connection.commit()
     except Exception:
         connection.rollback()

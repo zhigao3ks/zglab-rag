@@ -69,6 +69,7 @@ function onKeydown(event: KeyboardEvent): void {
             <option value="auto">自动</option>
             <option value="personal">个人知识库</option>
             <option value="web">联网检索</option>
+            <option value="agent">Agent</option>
           </select>
         </label>
         <button

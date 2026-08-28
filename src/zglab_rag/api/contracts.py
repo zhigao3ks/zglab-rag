@@ -57,7 +57,7 @@ class PublicAskRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
     question: str = Field(min_length=1)
-    mode: Literal["auto", "personal", "web"] = "auto"
+    mode: Literal["auto", "personal", "web", "agent"] = "auto"
 
 
 class PublicSource(BaseModel):
@@ -128,6 +128,9 @@ class PublicStreamStage(StrEnum):
     ACCEPTED = "accepted"
     RETRIEVING = "retrieving"
     RESEARCHING = "researching"
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    SYNTHESIZING = "synthesizing"
     GENERATING = "generating"
     VALIDATING = "validating"
     COMPLETED = "completed"

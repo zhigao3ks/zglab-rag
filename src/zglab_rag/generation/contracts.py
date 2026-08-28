@@ -40,6 +40,11 @@ class ProgressStage(StrEnum):
     # Phase 12D: emitted only on the web research product path (search +
     # safe fetch + extraction); the personal path never emits it.
     RESEARCHING = "researching"
+    # Phase 14D Agent public lifecycle names. They carry no plan, evidence,
+    # tool input/output or reasoning details.
+    PLANNING = "planning"
+    EXECUTING = "executing"
+    SYNTHESIZING = "synthesizing"
     GENERATING = "generating"
     VALIDATING = "validating"
 

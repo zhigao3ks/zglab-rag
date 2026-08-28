@@ -64,7 +64,9 @@ class Settings(BaseSettings):
     api_rate_limit_requests: int = 10
     api_rate_limit_window_seconds: int = 60
     api_max_request_body_bytes: int = 16 * 1024  # 16 KiB
-    api_cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:8000", "http://127.0.0.1:8000"])
+    api_cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:8000", "http://127.0.0.1:8000"]
+    )
     api_sse_heartbeat_seconds: float = 15.0
     api_trusted_proxy_ips: list[str] = Field(default_factory=lambda: ["127.0.0.1", "::1"])
     # Phase 11: retire the anonymous v1 ask endpoints (410 Gone). Keep
@@ -144,6 +146,15 @@ class Settings(BaseSettings):
     mcp_max_request_bytes: int = 256 * 1024
     mcp_max_response_bytes: int = 256 * 1024
     mcp_max_concurrent_calls: int = Field(default=1, ge=1, le=4)
+
+    # Phase 14D Agent product boundary. Agent remains opt-in and disabled
+    # by default; it has a distinct user quota because one request may fan
+    # out to multiple already-bounded capabilities.
+    agent_enabled: bool = False
+    agent_requests_per_minute: int = 2
+    agent_requests_per_day: int = 10
+    agent_concurrency: int = Field(default=1, ge=1, le=1)
+    agent_overall_deadline_seconds: float = Field(default=60.0, gt=0, le=90)
 
     @model_validator(mode="after")
     def _validate_auth_cookie_security(self) -> Settings:

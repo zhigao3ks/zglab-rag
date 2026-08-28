@@ -148,6 +148,9 @@ export function mapRawEvent(raw: RawSseEvent): StreamEvent | null {
     case "accepted":
     case "retrieving":
     case "researching":
+    case "planning":
+    case "executing":
+    case "synthesizing":
     case "generating":
     case "validating": {
       const payload = asRecord(parseJson(raw.data)) as Partial<PublicStreamStatus>;

@@ -204,9 +204,7 @@ class TestPersonalKnowledgeSkill:
 
         runtime = FakeRuntime(service=ProgressingService())
         skill = PersonalKnowledgeSkill(runtime)
-        result = skill.execute(
-            CapabilityRequest(question="q"), _context(), progress=seen.append
-        )
+        result = skill.execute(CapabilityRequest(question="q"), _context(), progress=seen.append)
         assert result.status == CapabilityStatus.SUCCESS
         assert seen == [
             ProgressStage.RETRIEVING,
@@ -232,11 +230,70 @@ class TestPersonalKnowledgeSkill:
 
 
 class TestApiCapabilityIntegration:
+    def test_agent_mode_is_authenticated_opt_in_and_preserves_personal_sources(
+        self, tmp_path: Path
+    ) -> None:
+        client, _app, _settings, _auth_runtime, runtime, csrf = authed_client(
+            tmp_path, agent_enabled=True
+        )
+        response = client.post(
+            ASK_URL,
+            json={"question": "介绍一下我的 RAG 项目", "mode": "agent"},
+            headers=ask_headers(csrf),
+        )
+        assert response.status_code == 200
+        assert response.json()["sources"][0]["id"] == "E1"
+        assert runtime.service.call_count == 1
+
+    def test_agent_kill_switch_auth_csrf_and_quota(self, tmp_path: Path) -> None:
+        client, _app, _settings, _auth_runtime, runtime, csrf = authed_client(tmp_path)
+        disabled = client.post(
+            ASK_URL, json={"question": "问题", "mode": "agent"}, headers=ask_headers(csrf)
+        )
+        assert disabled.status_code == 503
+        assert disabled.json()["error"]["code"] == "CAPABILITY_DISABLED"
+        assert runtime.service.call_count == 0
+
+        client, _app, _settings, _auth_runtime, runtime, csrf = authed_client(
+            tmp_path / "quota", agent_enabled=True, agent_requests_per_minute=1
+        )
+        assert (
+            client.post(
+                ASK_URL, json={"question": "第一问", "mode": "agent"}, headers=ask_headers(csrf)
+            ).status_code
+            == 200
+        )
+        denied = client.post(
+            ASK_URL, json={"question": "第二问", "mode": "agent"}, headers=ask_headers(csrf)
+        )
+        assert denied.status_code == 429
+        assert runtime.service.call_count == 1
+
+    def test_agent_sse_and_denied_operation(self, tmp_path: Path) -> None:
+        client, _app, _settings, _auth_runtime, _runtime, csrf = authed_client(
+            tmp_path, agent_enabled=True
+        )
+        stream = client.post(
+            STREAM_URL,
+            json={"question": "介绍一下我的 RAG 项目", "mode": "agent"},
+            headers=ask_headers(csrf),
+        )
+        assert stream.status_code == 200
+        assert '"stage": "planning"' in stream.text
+        assert '"stage": "executing"' in stream.text
+        assert '"stage": "synthesizing"' in stream.text
+        assert "event: completed" in stream.text
+        denied = client.post(
+            ASK_URL,
+            json={"question": "请调用 shell_exec", "mode": "agent"},
+            headers=ask_headers(csrf),
+        )
+        assert denied.status_code == 403
+        assert denied.json()["error"]["code"] == "CAPABILITY_DENIED"
+
     def test_v2_ask_runs_through_capability_boundary(self, tmp_path: Path) -> None:
         client, _app, _settings, _auth_runtime, runtime, csrf = authed_client(tmp_path)
-        response = client.post(
-            ASK_URL, json={"question": "介绍测试"}, headers=ask_headers(csrf)
-        )
+        response = client.post(ASK_URL, json={"question": "介绍测试"}, headers=ask_headers(csrf))
         assert response.status_code == 200
         body = response.json()
         # Public contract unchanged: request_id / status / answer / sources.
@@ -292,15 +349,11 @@ class TestApiCapabilityIntegration:
             tmp_path, auth_user_requests_per_minute=1
         )
         assert (
-            client.post(
-                ASK_URL, json={"question": "第一问"}, headers=ask_headers(csrf)
-            ).status_code
+            client.post(ASK_URL, json={"question": "第一问"}, headers=ask_headers(csrf)).status_code
             == 200
         )
         assert runtime.connection_open_count == 1
-        response = client.post(
-            ASK_URL, json={"question": "第二问"}, headers=ask_headers(csrf)
-        )
+        response = client.post(ASK_URL, json={"question": "第二问"}, headers=ask_headers(csrf))
         assert response.status_code == 429
         # The over-quota request never entered the capability.
         assert runtime.connection_open_count == 1

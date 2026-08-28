@@ -124,6 +124,14 @@ describe("mapRawEvent", () => {
     expect(event).toEqual({ kind: "stage", stage: "researching", requestId: "r1" });
   });
 
+  it("maps narrow Agent lifecycle stages", () => {
+    const event = mapRawEvent({
+      event: "planning",
+      data: JSON.stringify({ request_id: "r1", stage: "planning" }),
+    });
+    expect(event).toEqual({ kind: "stage", stage: "planning", requestId: "r1" });
+  });
+
   it("maps completed events with sources", () => {
     const event = mapRawEvent({
       event: "completed",

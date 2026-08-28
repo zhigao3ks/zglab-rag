@@ -36,6 +36,7 @@ class AskMode(StrEnum):
     AUTO = "auto"
     PERSONAL = "personal"
     WEB = "web"
+    AGENT = "agent"
 
 
 class SelectionReason(StrEnum):

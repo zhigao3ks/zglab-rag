@@ -48,6 +48,8 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
 
 from zglab_rag import __version__
+from zglab_rag.agent.contracts import AgentAnswer, AgentAnswerStatus
+from zglab_rag.agent.product import execute_agent
 from zglab_rag.api.concurrency import ConcurrencyGuard, ServiceBusyError
 from zglab_rag.api.contracts import (
     AuthActivateRequest,
@@ -231,9 +233,8 @@ def create_app(
     # Phase 12D: web research has its own conservative concurrency bound
     # (default 1) on top of the global guard, so concurrent requests never
     # download pages and call the Search API in parallel.
-    app.state.research_guard = ConcurrencyGuard(
-        max_concurrent=settings.web_research_concurrency
-    )
+    app.state.research_guard = ConcurrencyGuard(max_concurrent=settings.web_research_concurrency)
+    app.state.agent_guard = ConcurrencyGuard(max_concurrent=settings.agent_concurrency)
     app.state.rate_limiter = rate_limiter or RateLimiter(
         max_requests=settings.api_rate_limit_requests,
         window_seconds=settings.api_rate_limit_window_seconds,
@@ -399,9 +400,7 @@ def create_app(
 
         executor: ThreadPoolExecutor = app.state.executor
         try:
-            future = executor.submit(
-                _execute_generation, runtime, question, request_id=request_id
-            )
+            future = executor.submit(_execute_generation, runtime, question, request_id=request_id)
         except RuntimeError:
             # Executor was shut down (graceful shutdown in progress).
             guard.release()
@@ -422,9 +421,7 @@ def create_app(
         return _collect_generation(settings, future, request_id)
 
     @app.post("/api/v1/ask/stream")
-    async def ask_stream(
-        request: Request, body: PublicAskRequest
-    ) -> Response:
+    async def ask_stream(request: Request, body: PublicAskRequest) -> Response:
         """Public status-SSE ask endpoint.
 
         This is status streaming, not raw token streaming: the final answer
@@ -612,9 +609,7 @@ def create_app(
         response.delete_cookie(settings.auth_cookie_name, path="/")
         return response
 
-    async def _consume_credential_token(
-        request: Request, body: AuthActivateRequest, kind: str
-    ):
+    async def _consume_credential_token(request: Request, body: AuthActivateRequest, kind: str):
         """Shared flow for the two purpose-pinned token endpoints.
 
         ``kind`` selects the ONLY accepted token purpose: "activate" calls
@@ -784,6 +779,7 @@ def create_app(
         request_id: str,
         *,
         web: bool = False,
+        agent: bool = False,
     ) -> None:
         """Atomic per-user quota check; audits and re-raises on denial.
 
@@ -793,7 +789,11 @@ def create_app(
         """
         auth_runtime: AuthRuntime = app.state.auth_runtime
         with auth_runtime.connection() as connection:
-            if web:
+            if agent:
+                usage_guard = UsageGuard(
+                    connection, auth_runtime.agent_quota_config(settings), table="agent_usage"
+                )
+            elif web:
                 usage_guard = UsageGuard(
                     connection,
                     auth_runtime.web_quota_config(settings),
@@ -847,6 +847,26 @@ def create_app(
                     status_code=403,
                 )
         return selection, None
+
+    def _v2_agent_gate(question: str, request_id: str) -> JSONResponse | None:
+        """Fail closed for Agent and deny operation-like prompt requests."""
+        if not settings.agent_enabled:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CAPABILITY_DISABLED,
+                "Agent runtime is currently disabled",
+                status_code=503,
+            )
+        lowered = question.lower()
+        denied = ("shell_exec", "filesystem", "github write", "git push", "部署", "deploy")
+        if any(marker in lowered for marker in denied):
+            return _error_response(
+                request_id,
+                PublicErrorCode.CAPABILITY_DENIED,
+                "Requested capability is not permitted",
+                status_code=403,
+            )
+        return None
 
     async def _v2_ask_preflight(
         request: Request,
@@ -913,6 +933,7 @@ def create_app(
         client_id: str,
         *,
         web: bool = False,
+        agent: bool = False,
     ) -> JSONResponse | None:
         """Record quota after the concurrency slot(s) are held.
 
@@ -921,7 +942,7 @@ def create_app(
         not count itself (the atomic transaction rolls back).
         """
         try:
-            _v2_quota_gate(principal, client_id, request_id, web=web)
+            _v2_quota_gate(principal, client_id, request_id, web=web, agent=agent)
         except QuotaExceededError as exc:
             for guard in guards:
                 guard.release()
@@ -958,17 +979,24 @@ def create_app(
         if length_error is not None:
             return length_error
 
-        selection, policy_error = _v2_capability_gate(
-            question, AskMode(body.mode), principal, request_id
-        )
-        if policy_error is not None:
-            return policy_error
-        is_web = selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
+        is_agent = body.mode == AskMode.AGENT.value
+        if is_agent:
+            policy_error = _v2_agent_gate(question, request_id)
+            if policy_error is not None:
+                return policy_error
+            is_web = False
+        else:
+            selection, policy_error = _v2_capability_gate(
+                question, AskMode(body.mode), principal, request_id
+            )
+            if policy_error is not None:
+                return policy_error
+            is_web = selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
         logger.info(
             "request_id=%s selected_capability=%s selection_reason=%s",
             request_id,
-            selection.capability_id,
-            selection.reason.value,
+            "agent" if is_agent else selection.capability_id,
+            "explicit_agent" if is_agent else selection.reason.value,
         )
 
         try:
@@ -983,15 +1011,26 @@ def create_app(
             )
 
         held_guards = [guard]
+        if is_agent:
+            agent_guard: ConcurrencyGuard = app.state.agent_guard
+            try:
+                agent_guard.acquire()
+            except ServiceBusyError:
+                guard.release()
+                return _error_response(
+                    request_id,
+                    PublicErrorCode.SERVICE_BUSY,
+                    "Agent service is busy; please retry later",
+                    status_code=503,
+                )
+            held_guards.append(agent_guard)
         if is_web:
             research_guard: ConcurrencyGuard = app.state.research_guard
             try:
                 research_guard.acquire()
             except ServiceBusyError:
                 guard.release()
-                logger.warning(
-                    "service_busy error_code=SERVICE_BUSY capability=web_research"
-                )
+                logger.warning("service_busy error_code=SERVICE_BUSY capability=web_research")
                 return _error_response(
                     request_id,
                     PublicErrorCode.SERVICE_BUSY,
@@ -1006,12 +1045,17 @@ def create_app(
             request_id,
             getattr(request.state, "v2_client_id", "unknown"),
             web=is_web,
+            agent=is_agent,
         )
         if quota_error is not None:
             return quota_error
 
         executor: ThreadPoolExecutor = app.state.executor
-        execute_fn = _execute_web_generation if is_web else _execute_generation
+        execute_fn = (
+            _execute_agent
+            if is_agent
+            else (_execute_web_generation if is_web else _execute_generation)
+        )
         try:
             future = executor.submit(
                 execute_fn,
@@ -1022,7 +1066,7 @@ def create_app(
             )
         except RuntimeError:
             # Shutdown race: refund the quota, the work never started.
-            _refund_v2_quota(principal, web=is_web)
+            _refund_v2_quota(principal, web=is_web, agent=is_agent)
             for held in held_guards:
                 held.release()
             return _error_response(
@@ -1032,8 +1076,8 @@ def create_app(
                 status_code=503,
             )
         future.add_done_callback(lambda _future: guard.release())
-        if is_web:
-            future.add_done_callback(lambda _future: held_guards[1].release())
+        for held in held_guards[1:]:
+            future.add_done_callback(lambda _future, _guard=held: _guard.release())
         return _collect_generation(settings, future, request_id)
 
     @app.post("/api/v2/ask/stream")
@@ -1058,17 +1102,24 @@ def create_app(
         if length_error is not None:
             return length_error
 
-        selection, policy_error = _v2_capability_gate(
-            question, AskMode(body.mode), principal, request_id
-        )
-        if policy_error is not None:
-            return policy_error
-        is_web = selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
+        is_agent = body.mode == AskMode.AGENT.value
+        if is_agent:
+            policy_error = _v2_agent_gate(question, request_id)
+            if policy_error is not None:
+                return policy_error
+            is_web = False
+        else:
+            selection, policy_error = _v2_capability_gate(
+                question, AskMode(body.mode), principal, request_id
+            )
+            if policy_error is not None:
+                return policy_error
+            is_web = selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
         logger.info(
             "request_id=%s selected_capability=%s selection_reason=%s",
             request_id,
-            selection.capability_id,
-            selection.reason.value,
+            "agent" if is_agent else selection.capability_id,
+            "explicit_agent" if is_agent else selection.reason.value,
         )
 
         try:
@@ -1083,15 +1134,26 @@ def create_app(
             )
 
         held_guards = [guard]
+        if is_agent:
+            agent_guard: ConcurrencyGuard = app.state.agent_guard
+            try:
+                agent_guard.acquire()
+            except ServiceBusyError:
+                guard.release()
+                return _error_response(
+                    request_id,
+                    PublicErrorCode.SERVICE_BUSY,
+                    "Agent service is busy; please retry later",
+                    status_code=503,
+                )
+            held_guards.append(agent_guard)
         if is_web:
             research_guard: ConcurrencyGuard = app.state.research_guard
             try:
                 research_guard.acquire()
             except ServiceBusyError:
                 guard.release()
-                logger.warning(
-                    "service_busy error_code=SERVICE_BUSY capability=web_research"
-                )
+                logger.warning("service_busy error_code=SERVICE_BUSY capability=web_research")
                 return _error_response(
                     request_id,
                     PublicErrorCode.SERVICE_BUSY,
@@ -1106,12 +1168,13 @@ def create_app(
             request_id,
             getattr(request.state, "v2_client_id", "unknown"),
             web=is_web,
+            agent=is_agent,
         )
         if quota_error is not None:
             return quota_error
 
         def _refund_quota() -> None:
-            _refund_v2_quota(principal, web=is_web)
+            _refund_v2_quota(principal, web=is_web, agent=is_agent)
 
         return await _open_ask_stream(
             app,
@@ -1121,24 +1184,30 @@ def create_app(
             settings,
             on_submit_failure=_refund_quota,
             principal=principal,
-            execute=_execute_web_generation if is_web else _execute_generation,
+            execute=_execute_agent
+            if is_agent
+            else (_execute_web_generation if is_web else _execute_generation),
             extra_done_guards=held_guards[1:],
         )
 
-    def _refund_v2_quota(principal: AuthenticatedPrincipal, *, web: bool = False) -> None:
+    def _refund_v2_quota(
+        principal: AuthenticatedPrincipal, *, web: bool = False, agent: bool = False
+    ) -> None:
         auth_runtime: AuthRuntime = app.state.auth_runtime
         try:
             with auth_runtime.connection() as connection:
-                if web:
+                if agent:
+                    usage_guard = UsageGuard(
+                        connection, auth_runtime.agent_quota_config(settings), table="agent_usage"
+                    )
+                elif web:
                     usage_guard = UsageGuard(
                         connection,
                         auth_runtime.web_quota_config(settings),
                         table="web_usage",
                     )
                 else:
-                    usage_guard = UsageGuard(
-                        connection, auth_runtime.quota_config(settings)
-                    )
+                    usage_guard = UsageGuard(connection, auth_runtime.quota_config(settings))
                 usage_guard.refund(principal.user_id)
         except Exception:
             logger.warning("quota_refund_failed user_id=%s", principal.user_id)
@@ -1279,9 +1348,7 @@ def _execute_generation(
     skill = runtime.capability_registry.get(PERSONAL_KNOWLEDGE_CAPABILITY_ID)
     context = CapabilityContext(request_id=request_id, principal=principal)
     try:
-        result = skill.execute(
-            CapabilityRequest(question=question), context, progress=progress
-        )
+        result = skill.execute(CapabilityRequest(question=question), context, progress=progress)
     except CapabilityTechnicalError as exc:
         # Restore the pre-Phase-12 exception type for error mapping.
         raise exc.original if exc.original is not None else exc from exc
@@ -1339,14 +1406,32 @@ def _execute_web_generation(
     research_progress.last = None
 
     context = CapabilityContext(request_id=request_id, principal=principal)
-    result = skill.answer(
-        CapabilityRequest(question=question), context, progress=research_progress
-    )
+    result = skill.answer(CapabilityRequest(question=question), context, progress=research_progress)
     if result.generation is None:
         # Research infrastructure failure (no GenerationResult at all):
         # distinct from "insufficient evidence", mapped to 503 upstream.
         raise ProviderFailure(result.failure_reason or "web research failed")
     return result.generation
+
+
+def _execute_agent(
+    runtime: ApplicationRuntime | None,
+    question: str,
+    progress: ProgressCallback | None = None,
+    *,
+    request_id: str = "",
+    principal: AuthenticatedPrincipal | None = None,
+) -> AgentAnswer:
+    """Product wrapper for the bounded internal Agent runtime."""
+    if runtime is None:
+        runtime = _get_runtime()
+    return execute_agent(
+        runtime,
+        question,
+        progress,
+        request_id=request_id,
+        principal=principal,
+    )
 
 
 def _collect_generation(
@@ -1631,11 +1716,39 @@ def _sse_error_event(request_id: str, code: PublicErrorCode, message: str) -> st
     )
 
 
-def _map_result_to_response(result: GenerationResult, request_id: str) -> PublicAskResponse:
+def _map_result_to_response(
+    result: GenerationResult | AgentAnswer, request_id: str
+) -> PublicAskResponse:
     """Map internal GenerationResult to public response.
 
     The mapping strips all internal diagnostics, scores, and paths.
     """
+    if isinstance(result, AgentAnswer):
+        if result.status == AgentAnswerStatus.FAILED:
+            raise GenerationError(result.failure_reason or "Agent execution failed")
+        status = (
+            PublicStatus.INSUFFICIENT_EVIDENCE
+            if result.status == AgentAnswerStatus.INSUFFICIENT_EVIDENCE
+            else PublicStatus.ANSWERED
+        )
+        return PublicAskResponse(
+            request_id=request_id,
+            status=status,
+            answer=result.answer,
+            sources=[
+                PublicSource(
+                    id=source.evidence_id,
+                    title=source.title,
+                    section=source.section_path,
+                    source_path=source.source_path,
+                    origin=source.origin.value,
+                    url=source.url,
+                    domain=source.domain,
+                )
+                for source in result.sources
+            ],
+        )
+
     if result.status == GenerationStatus.FAILED:
         # Map provider failures to appropriate error codes
         if result.failure_reason and "Provider" in result.failure_reason:
@@ -1702,6 +1815,7 @@ def _get_runtime() -> ProductionRuntime:
     global _runtime
     if _runtime is None:
         from zglab_rag.api.runtime import ProductionRuntime
+
         _runtime = ProductionRuntime.create()
     return _runtime
 

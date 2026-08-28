@@ -40,7 +40,7 @@ export interface PublicSource {
 }
 
 /** Phase 12D ask mode; validated again server-side, never a capability id. */
-export type AskMode = "auto" | "personal" | "web";
+export type AskMode = "auto" | "personal" | "web" | "agent";
 
 export interface PublicAskResponse {
   request_id: string;
@@ -63,6 +63,9 @@ export type StreamStage =
   | "accepted"
   | "retrieving"
   | "researching"
+  | "planning"
+  | "executing"
+  | "synthesizing"
   | "generating"
   | "validating";
 
@@ -84,6 +87,9 @@ export const STAGE_LABELS: Record<StreamStage, string> = {
   accepted: "已接收问题…",
   retrieving: "正在检索公开知识库…",
   researching: "正在安全检索公开网络资料…",
+  planning: "正在规划受控执行…",
+  executing: "正在执行受控步骤…",
+  synthesizing: "正在汇总已验证结果…",
   generating: "正在整理回答…",
   validating: "正在核验引用…",
 };
@@ -133,6 +139,9 @@ export function isStreamStage(value: unknown): value is StreamStage {
     value === "accepted" ||
     value === "retrieving" ||
     value === "researching" ||
+    value === "planning" ||
+    value === "executing" ||
+    value === "synthesizing" ||
     value === "generating" ||
     value === "validating"
   );

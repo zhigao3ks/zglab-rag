@@ -283,7 +283,7 @@ class UsageRepository:
     """
 
     def __init__(self, connection: sqlite3.Connection, *, table: str = "usage") -> None:
-        if table not in ("usage", "web_usage"):
+        if table not in ("usage", "web_usage", "agent_usage"):
             raise ValueError(f"unknown usage table: {table!r}")
         self.connection = connection
         self.table = table
