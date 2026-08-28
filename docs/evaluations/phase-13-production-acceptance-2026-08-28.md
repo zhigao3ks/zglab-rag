@@ -18,8 +18,9 @@
 server `zglab-tools-mcp@0.0.1`、protocol `2025-11-25`、10 tools、startup 626.367 ms、
 典型 calls 126.104 ms、clean shutdown=true。API 启动后没有 Node child，保持 lazy stdio runtime。
 
-MCP true→false→true kill-switch 演练中，每次 API `/health`、`/ready` 均为 200；最终
-`MCP_ENABLED=true`。无 `/mcp`、`/api/v2/tool` 或新增监听端口；匿名 auth/me 为 401。
+MCP true→false→true kill-switch 演练中，每次 API `/health`、`/ready` 均为 200。最终因下述
+regression gate 未完成，已按 fail-closed 规则恢复 `MCP_ENABLED=false`。无 `/mcp`、
+`/api/v2/tool` 或新增监听端口；匿名 auth/me 为 401。
 Nginx、API、backup/sync timer 均 active；knowledge/auth integrity_check=ok；auth.db=0600。
 
 本地全量 pytest 已用 `/dev/shm` tmpfs 临时目录完成：**532 passed, 4 skipped**；此前 `/tmp` 和
