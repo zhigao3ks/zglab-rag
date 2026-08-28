@@ -69,14 +69,14 @@ Phase 13D   Security / Evaluation / Production          ✅ COMPLETE / PRODUCTIO
 Phase 14A   Agent Contracts & Observation Model         ✅
 Phase 14B   Router / Bounded Planner                    ✅
 Phase 14C   Executor & Final Synthesis                  ✅
-Phase 14D   Product / Evaluation / Production           ← 当前阶段
-Phase 15    Session Context
+Phase 14D   Product / Evaluation / Production           ✅ COMPLETE / PRODUCTION ACCEPTED / SEALED
+Phase 15    Session Context                             ← NEXT
 Phase 16    Owner Agent / Advanced Permissions
 ```
 
 Phase 14A–14C 已建立 contracts、deterministic bounded planner 及内部 sequential executor/final
 synthesis：单能力复用既有 grounded result，多能力才调用 injected synthesis；无 ReAct、replan、retry
-或产品入口。Phase 14D 才处理 API/SSE、前端、quota、evaluation 与生产验收。
+或产品入口。Phase 14 已完成内部与生产验收；下一阶段为 Phase 15 Session Context。
 
 完整新路线见 [`docs/roadmap-v2.md`](docs/roadmap-v2.md)。
 

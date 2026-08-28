@@ -16,3 +16,6 @@ Phase 14B 已实现 deterministic `BoundedPlanner`。Phase 14C 使其经由 `Bou
 `AgentSynthesizer` 直接复用单 Personal/Web 的 grounded answer 与 provenance，确定性渲染单 Tool result；
 只有多能力计划可进入注入式 final synthesis。Tool result 永远不是 Evidence，Web observation 仍是 untrusted
 evidence，不能修改冻结计划。上述链路仍只供内部 harness 使用，API/SSE/frontend/production integration 留给 14D。
+
+Phase 14D 已完成受控产品接入与生产验收：authenticated `mode=agent` 复用现有 security/quota
+boundary，默认 kill switch 为 OFF，最终生产状态为 `AGENT_ENABLED=true`。Phase 15 才可讨论 Session Context。
