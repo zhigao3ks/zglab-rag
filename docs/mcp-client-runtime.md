@@ -154,3 +154,18 @@ browser automation。
 
 生产打包（systemd/process ownership）、quota / 用户级 audit、安全评估、deployment / rollback、
 production acceptance —— 均为 13D，本阶段不实现。
+
+## 16. Phase 13D 本地安全验收
+
+`tests/test_mcp_process_lifecycle.py` 是 opt-in 的真实跨语言生命周期测试（需要
+`ZGLAB_RAG_MCP_INTEGRATION=1` 和 sibling `zglab-tools`）。它由 Python Host 启动 test-only
+Node stdio child，并通过 child PID 文件证明：
+
+- hard call timeout 返回 `MCP_CALL_TIMEOUT`，旧 PID 已死亡，下一次连接成功；
+- caller cancellation 与 child unexpected exit 都会关闭 process/session，且不会留下 child；
+- 设置假的 `OPENAI_API_KEY`、`ZGLAB_RAG_SEARCH_API_KEY`、`ZGLAB_RAG_TEST_SECRET` 后，真实
+  Node child 不会继承它们。
+
+该测试不向正式 tool 制造死循环，也不新增任何公网 endpoint。生产启用仍以前置 Node 版本、
+artifact 权限、internal smoke 和 kill-switch 演练全部通过为条件；真实结果见
+`docs/evaluations/phase-13-production-acceptance-2026-08-28.md`。
