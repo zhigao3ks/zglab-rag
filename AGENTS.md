@@ -54,8 +54,8 @@ Session Context 统一移动到 Phase 15。
 Phase 0–10  Personal Knowledge Assistant Foundation     ✅
 Phase 11    Authentication & Access Control             ✅ SEALED
 Phase 12    Agent Capability Foundation & Web Research  ✅ SEALED
-Phase 13    MCP Tool Runtime                            ← 当前阶段（13A/13B/13C 已完成）
-Phase 14    Agent Orchestrator
+Phase 13    MCP Tool Runtime                            ✅ SEALED
+Phase 14    Agent Orchestrator                          ← 当前阶段
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
 ```

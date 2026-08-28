@@ -1,7 +1,7 @@
 # MCP Tool Runtime 设计（Phase 13）
 
 > 权威 Phase 路线见 `docs/roadmap-v2.md`。本文是 Phase 13 的技术设计：Phase 13A / 13B / 13C 已落地，
-> Phase 13D 仅设计、尚未实现。
+> Phase 13D 已完成生产验收并封板；下一阶段为 Phase 14。
 
 ## 0. 状态
 
@@ -9,7 +9,7 @@
 Phase 13A — Tool Core Boundary & MCP Contracts       ✅ 已完成（本文 §3–§10）
 Phase 13B — MCP Server Runtime                       ✅ 已完成（本文 §11）
 Phase 13C — MCP Client + Capability Integration      ✅ 已完成（本文 §12）
-Phase 13D — Security / Evaluation / Production       ⏳ 未开始（本文 §13）
+Phase 13D — Security / Evaluation / Production       ✅ COMPLETE / PRODUCTION ACCEPTED / SEALED
 ```
 
 Phase 13 的总体目标不是“让 Agent 自动调用工具”，而是：

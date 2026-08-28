@@ -1,6 +1,6 @@
 # Phase 13 生产验收记录（2026-08-28）
 
-> 结论：**Phase 13 production accepted: NO**。生产 MCP 已部署并启用，但不得封板。
+> 结论：**Phase 13 COMPLETE / PRODUCTION ACCEPTED / SEALED**。
 
 ## 后续生产迁移（2026-08-28）
 
@@ -27,13 +27,26 @@ Nginx、API、backup/sync timer 均 active；knowledge/auth integrity_check=ok�
 工作区 ext4 journal 的 SQLite WAL `jbd2_log_wait_commit` stall 已隔离为宿主 filesystem 问题，
 并非 MCP regression。ruff 与 git diff --check 均通过。
 
-### 未通过的最终 Gate
+### 临时 activation 验证记录
 
 为做真实 Personal/Web/SSE 回归创建的短生命周期受控 USER 在 activate 阶段得到
 `INVALID_REQUEST`；没有伪造成功结果。该账户已立即 disable 并 revoke sessions。因而本轮只能
 确认 health/ready、匿名 Auth 边界和 MCP internal smoke，**尚未完成 authenticated Personal/Web
-ask/SSE regression**。因此本记录顶部的 `production accepted: NO` 继续有效；虽然 MCP 当前保持
-启用，下一次维护窗口必须先以可用的受控账号完成上述四项回归，之后才可封板。
+ask/SSE regression**。随后由 owner 使用现有正常 ADMIN 账号在真实 HTTPS 浏览器完成 Personal、
+Auto Personal、Web、两条 SSE 与 logout/session 回归，均通过。因此该临时 activation 失败归类为
+**acceptance-test procedure issue**，不是确认的 Auth regression；临时账户仍保持 disabled。
+
+## 最终封板复验
+
+- MCP 再次开启后 `/health`、`/ready`=200，API 启动仍不 spawn child（lazy runtime）；
+- `sudo -u zglab` final smoke：protocol `2025-11-25`、10 tools、startup 157.879 ms、calls
+  43.905 ms、clean shutdown=true；
+- final kill-switch：MCP=true → smoke success；MCP=false → health/ready=200；MCP=true →
+  health/ready=200，最终 `MCP_ENABLED=true`；
+- 最终 API、Nginx、backup timer、sync timer 均 active；knowledge/auth integrity_check=ok。
+
+Phase 13 不新增 public MCP endpoint、Nginx route、`/api/v2/tool`、`mode=tool`、LLM tool
+selection 或 Phase 14 capability。
 
 ## 已完成的本地安全验证
 

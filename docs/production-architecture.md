@@ -273,5 +273,5 @@ nginx                      active
 /ready                     200
 ```
 
-Phase 12 已封板；下一 Product Phase 为 Phase 13 — MCP Tool Runtime。MCP 第一版仍应优先
-localhost/internal，不因为进入下一阶段而扩大现有公网暴露面。
+Phase 13 已完成生产验收并封板；下一 Product Phase 为 Phase 14 — Agent Orchestrator。MCP 仍为
+Node 22 独立 runtime 的 localhost/internal stdio，不因为封板而扩大公网暴露面。
