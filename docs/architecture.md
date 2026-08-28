@@ -426,7 +426,8 @@ Phase 13A（Tool Core Boundary & MCP Contracts）已完成：`zglab-tools` 新�
 （Shared Tool Core + Tool Registry + typed/bounded contract，复用既有纯逻辑、不复制算法），
 第一批 10 个 deterministic pure tool；`docs/mcp-tool-runtime.md` 冻结跨仓库边界（Option B：
 MCP Server 放 `zglab-tools`，stdio transport）。13B 已实现 stdio MCP Server（`src/mcp/`，
-见 `docs/mcp-server.md`）；13C/13D 未实现。
+见 `docs/mcp-server.md`）；13C 已实现 Python Host `MCPToolRuntime`（`src/zglab_rag/mcp/`，
+见 `docs/mcp-client-runtime.md`）；13D 未实现。
 
 ```text
 zglab-tools

@@ -9,6 +9,7 @@ dependencies = [
   "beautifulsoup4>=4.12",
   "fastapi",
   "httpx>=0.28",
+  "mcp>=2,<3",
   "numpy>=2,<3",
   "psutil>=6,<8",
   "pydantic>=2",

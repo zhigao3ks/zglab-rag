@@ -127,6 +127,21 @@ class Settings(BaseSettings):
     web_research_concurrency: int = Field(default=1, ge=1, le=4)
     web_research_admin_only: bool = False
 
+    # Phase 13C MCP Tool Runtime (host side). Fail-closed default: disabled.
+    # command/args/cwd are owner deployment configuration, never user input;
+    # the child process receives only a minimal, secret-free environment.
+    mcp_enabled: bool = False
+    mcp_server_command: str = "node"
+    mcp_server_args: list[str] = Field(default_factory=lambda: ["dist-mcp/cli.js"])
+    mcp_server_cwd: str | None = None
+    mcp_expected_server_name: str = "zglab-tools-mcp"
+    mcp_startup_timeout_seconds: float = 10.0
+    mcp_call_timeout_seconds: float = 2.0
+    mcp_shutdown_timeout_seconds: float = 5.0
+    mcp_max_request_bytes: int = 512 * 1024
+    mcp_max_response_bytes: int = 512 * 1024
+    mcp_max_concurrent_calls: int = Field(default=1, ge=1, le=4)
+
     @model_validator(mode="after")
     def _validate_auth_cookie_security(self) -> Settings:
         """Refuse the insecure __Host- + Secure=false combination.

@@ -43,7 +43,7 @@ Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
 Phase 12D   Product Integration & Evaluation            ✅ 已完成并生产验收/封板
 Phase 13A   Tool Core Boundary & MCP Contracts          ✅ 已完成
 Phase 13B   MCP Server Runtime                          ✅ 已完成
-Phase 13C   MCP Client + Capability Integration         ⏳
+Phase 13C   MCP Client + Capability Integration         ✅ 已完成
 Phase 13D   Security / Evaluation / Production          ⏳
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -254,8 +254,7 @@ Registry + MCP schema 准备 + 确定性 Vitest 测试），复用既有 `src/to
 不复制算法；`zglab-rag` 侧新增 `docs/mcp-tool-runtime.md` 冻结跨仓库边界（Option B：MCP
 Server 放 `zglab-tools`，stdio transport，Python 不 import Node package）。第一批 10 个
 deterministic pure tool（JSON format/minify/validate、Base64、URL、text count/deduplicate、
-timestamp），统一 `side_effect=none`、`network_access=false`。MCP Server（13B）/ Client
-（13C）/ Security·Evaluation·Production（13D）尚未实现，详见 `docs/mcp-tool-runtime.md`。
+timestamp），统一 `side_effect=none`、`network_access=false`。详见 `docs/mcp-tool-runtime.md`。
 
 ### Phase 13B — MCP Server Runtime ✅
 
@@ -267,6 +266,17 @@ Schema、`tools/call` 只走 `ToolRegistry.execute`；第一道 size gate =
 专用、诊断走 stderr；SIGINT/SIGTERM/stdin close 干净退出。真实官方 MCP Client integration
 test 通过。超时仍为 advertised policy 而非 in-process 抢占（13C 补齐 host deadline）。详见
 `zglab-tools/docs/mcp-server.md`。
+
+### Phase 13C — MCP Client + Capability Integration ✅
+
+已实现（`zglab-rag/src/zglab_rag/mcp/`）：Python Host `MCPToolRuntime`（官方 `mcp` 2.1.1
+客户端、stdio 长连接懒启动、host-side 显式 allowlist、child secret 隔离、`asyncio.timeout`
+hard deadline、超时/进程退出 → UNHEALTHY → lazy 重连、`structured_content` 权威结果映射、
+输入/输出 bound）。`zglab-tools` 增加 `npm run build:mcp` 编译产物 `dist-mcp/cli.js`（与浏览器
+`dist/` 分离）。真实跨语言验收通过（server `zglab-tools-mcp@0.0.1`、协议 `2025-11-25`、10 个
+tool、全部调用成功、clean shutdown）。不接 `/api/v2/ask`，不建 `MCPToolCapability`/
+`AgentObservation`（Phase 14）。详见 `docs/mcp-client-runtime.md` 与
+`docs/evaluations/phase-13c-mcp-client-integration.md`。
 
 ## 6. Phase 14 — Agent Orchestrator
 

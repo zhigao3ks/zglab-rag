@@ -1,14 +1,14 @@
 # MCP Tool Runtime 设计（Phase 13）
 
-> 权威 Phase 路线见 `docs/roadmap-v2.md`。本文是 Phase 13 的技术设计：Phase 13A / 13B 已落地，
-> Phase 13C / 13D 仅设计、尚未实现。
+> 权威 Phase 路线见 `docs/roadmap-v2.md`。本文是 Phase 13 的技术设计：Phase 13A / 13B / 13C 已落地，
+> Phase 13D 仅设计、尚未实现。
 
 ## 0. 状态
 
 ```text
 Phase 13A — Tool Core Boundary & MCP Contracts       ✅ 已完成（本文 §3–§10）
 Phase 13B — MCP Server Runtime                       ✅ 已完成（本文 §11）
-Phase 13C — MCP Client + Capability Integration      ⏳ 未开始（本文 §12）
+Phase 13C — MCP Client + Capability Integration      ✅ 已完成（本文 §12）
 Phase 13D — Security / Evaluation / Production       ⏳ 未开始（本文 §13）
 ```
 
@@ -208,19 +208,23 @@ MCP Server（src/mcp/server.ts，官方 SDK 底层 Server）
 同步纯函数；普通 `Promise.race` 无法打断同步 CPU loop）；hard process/request deadline 由 13C
 的 host 补齐。详见 `zglab-tools/docs/mcp-server.md`。
 
-## 12. Phase 13C — MCP Client + Capability Integration（只设计，未实现）
+## 12. Phase 13C — MCP Client + Capability Integration ✅ 已完成
 
 ```text
 zglab-rag
     ↓
-MCP Client
+MCPToolRuntime（src/zglab_rag/mcp/runtime.py）
+    ↓
+Official Python MCP Client（mcp 2.1.1）
     ↓ stdio
-zglab-tools MCP Server
+zglab-tools MCP Server（node dist-mcp/cli.js）
 ```
 
-届时建立 `MCPToolCapability` 或相应 bounded integration；不提前接 `/api/v2/ask`。MCP Tool
-Runtime 是与 PersonalKnowledgeSkill / WebResearchSkill 并列的独立边界，Skill 不是 MCP tool
-的封装，反之亦然。
+已实现：Python Host `MCPToolRuntime`（官方 `mcp` 2.1.1 客户端、stdio 长连接懒启动、host-side
+显式 allowlist、child secret 隔离、`asyncio.timeout` hard deadline、超时/进程退出 → UNHEALTHY →
+lazy 重连、`structured_content` 权威结果映射、输入/输出 bound）。不接 `/api/v2/ask`，不建
+`MCPToolCapability`/`AgentObservation`（那是 Phase 14）。详见 `docs/mcp-client-runtime.md` 与
+`docs/evaluations/phase-13c-mcp-client-integration.md`。
 
 ## 13. Phase 13D — Security / Evaluation / Production（只设计，未实现）
 

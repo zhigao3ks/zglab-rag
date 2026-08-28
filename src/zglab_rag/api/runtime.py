@@ -24,6 +24,7 @@ from zglab_rag.generation.service import GroundedAnswerService
 from zglab_rag.storage.database import Database
 
 if TYPE_CHECKING:
+    from zglab_rag.mcp.runtime import MCPToolRuntime
     from zglab_rag.research.skill import WebResearchSkill
 
 
@@ -52,6 +53,10 @@ class ProductionRuntime:
         # while the kill switch is on, so app startup never depends on
         # SEARCH_API_KEY and the personal path stays fully independent.
         self._web_research_skill: WebResearchSkill | None = None
+        # Phase 13C: the MCP tool runtime is optional, disabled by default and
+        # lazy — building it never spawns Node; the process starts only on the
+        # first list_tools/call_tool. No public endpoint consumes it yet.
+        self._mcp_tool_runtime: MCPToolRuntime | None = None
 
     @property
     def web_research_skill(self) -> WebResearchSkill | None:
@@ -69,6 +74,21 @@ class ProductionRuntime:
                 self.settings, self.llm_provider
             )
         return self._web_research_skill
+
+    @property
+    def mcp_tool_runtime(self) -> MCPToolRuntime | None:
+        """Lazily built MCP tool runtime; None while the kill switch is off.
+
+        Building it never spawns the Node child process — the runtime connects
+        lazily on first use — and it is not wired to any public endpoint yet.
+        """
+        if not self.settings.mcp_enabled:
+            return None
+        if self._mcp_tool_runtime is None:
+            from zglab_rag.mcp.runtime import build_mcp_tool_runtime
+
+            self._mcp_tool_runtime = build_mcp_tool_runtime(self.settings)
+        return self._mcp_tool_runtime
 
     @classmethod
     def create(
