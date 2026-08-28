@@ -40,7 +40,7 @@ Phase 11    Authentication & Access Control             ✅ 已完成并生产�
 Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
 Phase 12B   Web Research Core                           ✅ 已实现
 Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
-Phase 12D   Product Integration & Evaluation            ✅ 已实现（本地验收；生产未开启）
+Phase 12D   Product Integration & Evaluation            ✅ 已完成并生产验收/封板
 Phase 13    MCP Tool Runtime                            ⏳ 下一 Product Phase
 Phase 14    Agent Orchestrator
 Phase 15    Session Context
@@ -61,12 +61,12 @@ Research Core）已实现，见 `docs/web-research-runtime.md` 与
 Grounded Generation Integration）已实现（仅内部能力，未接入公网 API），见
 `docs/web-evidence-grounding.md` 与
 `docs/evaluations/phase-12c-web-evidence-grounding.md`；Phase 12D（Product
-Integration & Evaluation）已完成本地实现与验收（见
-`docs/web-research-product.md`、`docs/evaluations/phase-12d-product-acceptance.md`
-与 `docs/evaluations/phase-12-web-research-evaluation.md`），但生产尚未开启
-Web Research（`WEB_RESEARCH_ENABLED=false`，真实 provider smoke 与生产验收
-未完成）：**Phase 12 不得标记为 COMPLETE / PRODUCTION ACCEPTED**。下一
-Product Phase 为 Phase 13（MCP Tool Runtime），在获得明确授权前不得开始。
+Integration & Evaluation）已完成生产验收并于 **2026-08-28** 正式封板：真实
+provider smoke、HTTPS API/SSE、SSRF/TLS、安全开关、独立 quota/concurrency、
+provider 故障隔离、auth v3 与原子备份均已验证，生产
+`WEB_RESEARCH_ENABLED=true`。完整证据见
+`docs/evaluations/phase-12-production-acceptance-2026-08-28.md`。下一 Product
+Phase 为 Phase 13（MCP Tool Runtime），在获得明确授权前不得开始。
 
 Evaluation 继续作为跨阶段基础设施，不重新成为独立 Phase。
 
@@ -190,17 +190,19 @@ UNTRUSTED 边界；citation URL 只能来自 provenance；zero evidence 不调�
 LLM；`/api/v2/ask`、SSE 与公网契约零变化；验收见
 `docs/evaluations/phase-12c-web-evidence-grounding.md`。
 
-### Phase 12D — Product Integration & Evaluation ✅（本地）
+### Phase 12D — Product Integration & Evaluation ✅（生产验收/封板）
 
 已实现：确定性非 LLM capability selection（auto/personal/web，自我指涉
 优先，ambiguous 保守默认 personal）；`/api/v2/ask(/stream)` additive
 `mode` 与 web source（origin/url/domain）；SSE `researching` 阶段；独立
 web quota / permission / concurrency；DNS rebinding 以 pinned resolution
 关闭；前端 mode 控件与安全外链；evaluation dataset（37 题）与真实测量。
-生产未开启：真实 provider smoke 与生产验收未完成，
-`WEB_RESEARCH_ENABLED` 保持 false。验收与评估见
-`docs/evaluations/phase-12d-product-acceptance.md` 与
-`docs/evaluations/phase-12-web-research-evaluation.md`。
+2026-08-28 已完成生产开启与验收：真实 provider smoke、HTTPS Web/SSE、
+开关、quota/concurrency、provider 故障隔离、auth v3 和备份均已通过；
+`WEB_RESEARCH_ENABLED=true`。本地验收与评估见
+`docs/evaluations/phase-12d-product-acceptance.md`、
+`docs/evaluations/phase-12-web-research-evaluation.md`；生产封板见
+`docs/evaluations/phase-12-production-acceptance-2026-08-28.md`。
 
 ### Phase 12 明确不做
 

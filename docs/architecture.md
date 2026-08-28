@@ -353,11 +353,14 @@ Web Research 管线（Search → Safe Fetch → Extract → ExternalEvidence）�
 渲染；citation URL 只能来自 provenance；仅内部能力，未接入公网 API；设计见
 `docs/web-evidence-grounding.md`。
 
-**Phase 12D（本地完成，生产未开启）**：确定性非 LLM capability selection
+**Phase 12D（已生产验收/封板）**：确定性非 LLM capability selection
 （auto/personal/web）把两个 Skill 接入 `/api/v2/ask(/stream)`；additive
 `mode` 与 web source（origin/url/domain）；SSE `researching`；独立 web
 quota / permission / 并发；DNS rebinding 以 pinned resolution 关闭；
-前端 mode 控件与安全外链；设计见 `docs/web-research-product.md`。
+前端 mode 控件与安全外链。2026-08-28 已完成真实 provider、HTTPS API/SSE、
+安全开关、quota/concurrency、故障隔离、auth v3 与备份验证；封板证据见
+`docs/evaluations/phase-12-production-acceptance-2026-08-28.md`，设计见
+`docs/web-research-product.md`。
 
 Phase 12 首先把现有 RAG 变成一个稳定能力：
 
