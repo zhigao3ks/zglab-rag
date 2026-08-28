@@ -20,6 +20,7 @@ from zglab_rag.generation.contracts import (
     ProgressStage,
 )
 from zglab_rag.mcp.contracts import MCPToolResult
+from zglab_rag.mcp.runtime import build_mcp_tool_runtime
 
 
 class _UnavailableWeb:
@@ -35,6 +36,20 @@ class _UnavailableWeb:
 class _UnavailableTools:
     async def call_tool(self, tool_id: str, _arguments: dict) -> MCPToolResult:
         return MCPToolResult("error", tool_id, error_code="MCP_DISABLED", error_message="disabled")
+
+
+class _RequestScopedTools:
+    """Keep MCP stdio ownership inside the Agent worker's one event loop."""
+
+    def __init__(self, settings) -> None:
+        self._settings = settings
+
+    async def call_tool(self, tool_id: str, arguments: dict) -> MCPToolResult:
+        runtime = build_mcp_tool_runtime(self._settings)
+        try:
+            return await runtime.call_tool(tool_id, arguments)
+        finally:
+            await runtime.close()
 
 
 class _DeterministicMultiSynthesis:
@@ -71,7 +86,11 @@ def execute_agent(
     plan = BoundedPlanner().plan(request)
     personal = runtime.capability_registry.get("personal_knowledge")
     web = getattr(runtime, "web_research_skill", None) or _UnavailableWeb()
-    tools = getattr(runtime, "mcp_tool_runtime", None) or _UnavailableTools()
+    tools = (
+        _RequestScopedTools(runtime.settings)
+        if runtime.settings.mcp_enabled
+        else _UnavailableTools()
+    )
     executor = BoundedAgentExecutor(
         personal=personal,
         web=web,
