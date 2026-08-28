@@ -1,395 +1,624 @@
 # ZGLab Personal AI Agent — Roadmap v2
 
 > **Roadmap authority**：本文档自 **2026-08-25** 起是 Phase 11 及以后阶段的权威路线图。
-> Phase 0–10 的历史编号、实现内容与验收记录保持不变。
-> 如果旧文档、历史验收记录或注释中的 Phase 11+ 编号与本文档冲突，以本文档为准。
+> Phase 0–10 的历史编号、实现内容与验收记录保持不变；Phase 11–14 已完成并封板。
+> **2026-08-28 Phase 14 封板后，后续优先级按“先体验、再记忆、再检索智能、再分析、最后提高自治”重新排序。**
+> 如果旧文档、历史验收记录或注释中的 future phase 与本文档冲突，以本文档为准。
 
-## 1. 为什么重新基线
+## 1. 项目定位
 
-Phase 0–10 已经完成了 Personal Knowledge Assistant 的核心基础设施，并完成生产部署：
+Phase 0–10 已完成 Personal Knowledge Assistant 基础设施并投入生产：
 
 - Markdown / Git knowledge ingestion；
-- Persistent SQLite + sqlite-vec index；
+- structure-aware chunking 与稳定 document/chunk ID；
+- BGE Embedding benchmark；
+- SQLite + sqlite-vec persistent index；
 - Vector / Lexical / Hybrid / Reranker evaluation；
 - Evidence-Grounded Generation + Citation Validation；
-- Public API + SSE + Vue Web UI；
+- API / SSE / Vue Web UI；
 - Nginx / HTTPS / systemd / backup / sync；
-- `https://ask.zglab.fun` 已完成公网验收。
+- `https://ask.zglab.fun` 公网部署与验收。
 
-项目的长期目标随后从“公网 Personal Knowledge Assistant”扩展为：
+随后系统演进为：
 
-> **以个人身份为主体的 ZGLab Personal AI Agent。**
+> **以个人知识为核心，结合 Web Research、MCP Tool Runtime 与 Bounded Agent Orchestrator 的 ZGLab Personal AI Agent。**
 
-未来 Agent 将逐步具备三类能力：
+当前三类正式 capability：
 
-1. **Personal Knowledge Skill**：复用现有 Evidence-Grounded RAG；
-2. **Web Research Skill**：从公网检索、抓取、抽取并生成可验证 External Evidence；
-3. **MCP Tool Runtime**：通过 MCP 调用经过批准的确定性工具。
+1. **Personal Knowledge Skill**：Evidence-Grounded RAG；
+2. **Web Research Skill**：受控公网搜索、抓取、抽取与可验证 External Evidence；
+3. **MCP Tool Runtime**：受 allowlist、无副作用、确定性的工具调用。
 
-由于服务暴露在公网，且服务器、LLM、Search API 与后续 Agent 多步调用成本均由项目所有者承担，
-在增加任何新的 cost-bearing capability 之前，必须先建立身份认证、访问控制、Session 吊销与用户级额度边界。
+统一 Agent Runtime 已在 Phase 14 完成生产封板。
 
-因此在 2026-08-25 对 Phase 11+ 重新基线。
+---
 
 ## 2. 当前权威 Roadmap
 
 ```text
-Phase 0–10  Personal Knowledge Assistant Foundation     ✅ 已完成
+Phase 0–10  Personal Knowledge Assistant Foundation        ✅ SEALED
+Phase 11    Authentication & Access Control                ✅ SEALED
+Phase 12    Capability Foundation & Web Research           ✅ SEALED
+Phase 13    MCP Tool Runtime                               ✅ SEALED
+Phase 14    Agent Orchestrator                              ✅ SEALED
 
-Phase 11    Authentication & Access Control             ✅ 已完成并生产验收
-Phase 12A   Capability Foundation & PersonalKnowledgeSkill ✅ 已实现
-Phase 12B   Web Research Core                           ✅ 已实现
-Phase 12C   Evidence + Grounded Generation Integration  ✅ 已实现
-Phase 12D   Product Integration & Evaluation            ✅ 已完成并生产验收/封板
-Phase 13A   Tool Core Boundary & MCP Contracts          ✅ 已完成
-Phase 13B   MCP Server Runtime                          ✅ 已完成
-Phase 13C   MCP Client + Capability Integration         ✅ 已完成
-Phase 13D   Security / Evaluation / Production          ✅ COMPLETE / PRODUCTION ACCEPTED / SEALED
-Phase 14A   Agent Contracts & Observation Model         ✅
-Phase 14B   Router / Bounded Planner                    ✅
-Phase 14C   Executor & Final Synthesis                  ✅
-Phase 14D   Product / Evaluation / Production           ✅ COMPLETE / PRODUCTION ACCEPTED / SEALED
-Phase 15    Session Context                             ← NEXT
-Phase 16    Owner Agent / Advanced Permissions
+UX Track     Frontend / Product Experience Stabilization   ← IMMEDIATE
+
+Phase 15    Conversation & Session Memory                   ← NEXT PRODUCT PHASE
+Phase 16    Retrieval Intelligence & Knowledge Graph
+Phase 17    Agent Analyst
+Phase 18    Advanced Agent Autonomy / Bounded ReAct
+Phase 19    Owner Agent / Advanced Permissions
 ```
 
-Phase 11 已于 **2026-08-26** 完成生产迁移、真实 HTTPS 浏览器验收与运维验收并正式封板。
-实现与设计见 `docs/authentication.md`、`docs/api-v2.md`；本地验收见
-`docs/evaluations/phase-11-authentication-acceptance.md`；生产部署实录见
-`docs/phase-11-production-deployment-2026-08-26.md`；最终生产封板证据见
-`docs/evaluations/phase-11-production-acceptance-2026-08-26.md`。
-
-Phase 12A（Capability Foundation & PersonalKnowledgeSkill）已实现，见
-`docs/capability-architecture.md` 与
-`docs/evaluations/phase-12a-capability-foundation.md`；Phase 12B（Web
-Research Core）已实现，见 `docs/web-research-runtime.md` 与
-`docs/evaluations/phase-12b-web-research-core.md`；Phase 12C（Evidence +
-Grounded Generation Integration）已实现（仅内部能力，未接入公网 API），见
-`docs/web-evidence-grounding.md` 与
-`docs/evaluations/phase-12c-web-evidence-grounding.md`；Phase 12D（Product
-Integration & Evaluation）已完成生产验收并于 **2026-08-28** 正式封板：真实
-provider smoke、HTTPS API/SSE、SSRF/TLS、安全开关、独立 quota/concurrency、
-provider 故障隔离、auth v3 与原子备份均已验证，生产
-`WEB_RESEARCH_ENABLED=true`。完整证据见
-`docs/evaluations/phase-12-production-acceptance-2026-08-28.md`。下一 Product
-Phase 为 Phase 13（MCP Tool Runtime），在获得明确授权前不得开始。
-
-Evaluation 继续作为跨阶段基础设施，不重新成为独立 Phase。
-
-Post-v1 性能优化（Reranker 量化、cache、monitoring、latency、evaluation expansion 等）继续保持
-非编号优化轨道，不占用上述 Product Capability Phase 编号。
-
-## 3. Phase 11 — Authentication & Access Control
-
-> **封板状态：2026-08-26 已完成生产部署与验收。除安全修复、运维修复和必要兼容性修复外，不再扩展 Phase 11 功能范围。**
-
-### 目标
-
-在 Web Research、MCP 与 Agent Runtime 之前建立统一 Security Foundation。
-
-产品访问模型调整为：
+当前开发优先级：
 
 ```text
-ask.zglab.fun
-      │
-      ├── Public Landing / Project Showcase
-      │       └── 不触发外部 LLM / Search / MCP 消费
-      │
-      └── Authenticated Application
-              └── 当前 RAG + future Agent capabilities
+先让它好用
+    ↓
+再让它记得住
+    ↓
+再让它更会找
+    ↓
+再让它更会分析
+    ↓
+最后才让它更自主
 ```
 
-### 冻结原则
+这取代“单纯按照 Agent 技术复杂度继续向前堆能力”的旧排序。
 
-- **No public registration**：不存在匿名 `/register` / `/signup`；
-- 账号只能由管理员通过服务器 CLI 创建和下发；
-- 优先使用 **Admin Provisioning + Single-use Activation Token**；
-- 密码使用成熟的 **Argon2id** 实现；
-- 使用 **Server-side Session + Secure HttpOnly Cookie**，不以 JWT + localStorage 作为默认方案；
-- Auth 数据使用独立 `auth.db`，不写入 `knowledge.db`；
-- Session / Activation Token 在数据库中只保存 hash，不保存明文；
-- AuthN / AuthZ / quota 必须在 Agent Runtime 之外由服务端强制执行；
-- Cookie Session 需要 CSRF / Origin 防护；
-- Login 需要 per-IP + per-identity throttling；
-- 消费型接口需要 per-user rate limit / daily quota；
-- 保留 concurrency、timeout、request-size、安全错误等 Phase 9 已有防护；
-- `/health` / `/ready` 与公开展示页可以匿名；
-- Phase 11 不实现 Web Research、MCP、Agent Planner 或 Conversation Memory。
+Evaluation、performance、monitoring、documentation reconciliation 等继续作为跨阶段基础设施，不单独占 Product Phase。
 
-### API 演进
+---
 
-Public API v1 是 Phase 9 的历史冻结契约，不重写其历史定义。
+## 3. 已封板阶段
 
-Phase 11 已落地 authenticated `/api/v2` 契约：
+### Phase 11 — Authentication & Access Control ✅
+
+建立统一 Security Foundation：
+
+- No public signup；
+- Admin CLI provisioning + single-use activation；
+- Argon2id；
+- server-side opaque session；
+- Secure HttpOnly cookie；
+- CSRF / Origin validation；
+- per-IP / per-identity throttling；
+- per-user quota / concurrency；
+- independent `auth.db`；
+- kill switch / audit / v1 retirement。
+
+认证、授权、quota 必须位于 Agent Runtime 之外，Agent 不得绕过服务端安全边界。
+
+### Phase 12 — Capability Foundation & Web Research ✅
+
+完成：
 
 ```text
-POST /api/v2/auth/login
-POST /api/v2/auth/logout
-GET  /api/v2/auth/me
-POST /api/v2/auth/activate
-POST /api/v2/auth/reset-password
-POST /api/v2/auth/change-password
-POST /api/v2/ask
-POST /api/v2/ask/stream
+PersonalKnowledgeSkill
++
+WebResearchSkill
 ```
 
-旧 `/api/v1/ask` / `/api/v1/ask/stream` 在生产已退役为 `410 API_RETIRED`，
-不再作为匿名 LLM 消费入口。
-
-### 子阶段
+Web 路径：
 
 ```text
-11A Identity Core
-    auth.db / user / password / admin CLI / activation
-
-11B Session Authentication
-    login / logout / me / secure cookie / revoke / CSRF / login throttling
-
-11C Protected API & Cost Boundary
-    authenticated ask/SSE / authorization / per-user rate limit / daily quota
-
-11D Security & Product Acceptance
-    audit / kill switch / public landing / deployment migration / regression
+Search
+→ deterministic candidate selection
+→ SSRF / DNS / redirect validation
+→ pinned safe fetch
+→ extraction
+→ ExternalEvidence
+→ Grounded Generation
+→ Citation Validation
 ```
 
-## 4. Phase 12 — Agent Capability Foundation & Web Research
+Web evidence 始终是 request-scoped、untrusted，不写入长期 Personal Knowledge；URL 必须来自真实 provenance。
 
-原先在 2026-08-21 冻结为 “Phase 11 — External Research & Session Evidence” 的 Web Research
-技术设计 **不作废**，而是顺延到 Phase 12。详细边界仍见 `docs/web-research-skill.md`。
+### Phase 13 — MCP Tool Runtime ✅
 
-### Phase 12A — Capability Foundation & PersonalKnowledgeSkill ✅
-
-已实现：
-
-- 把现有 RAG 抽象为 `PersonalKnowledgeSkill`（wrap，不重写）；
-- 建立最小 Capability / Skill contract（CapabilityRequest / Context / Result / Registry）；
-- API v2 经 Capability boundary 调用，公开响应与 SSE 契约不变。
-
-验收见 `docs/evaluations/phase-12a-capability-foundation.md`。
-
-### Phase 12B — Web Research Core ✅
-
-已实现：SearchProvider（Tavily adapter + deterministic fake）、candidate
-selection、Safe Fetch（SSRF / DNS / redirect 逐跳重验、bounded size /
-timeout / content-type）、确定性 extraction、ExternalEvidence（untrusted、
-URL provenance）与 bounded ResearchService / WebResearchSkill。未接入
-公网 API，未接 Grounded Generation；验收见
-`docs/evaluations/phase-12b-web-research-core.md`。
-
-Phase 12B 已完成的要点：
-
-- 实现 request-scoped `WebResearchSkill`；
-- SearchProvider 可替换；
-- Search → candidate selection → safe fetch → extraction → normalization；
-- External Evidence 继续进入 Grounded Generation + Citation Validation；
-- Web URL 必须来自系统真实检索结果；
-- Prompt Injection 与 SSRF 边界必须在第一版成立；
-- Web Research 不写入长期 Personal Knowledge。
-
-### Phase 12C — Evidence + Grounded Generation Integration ✅
-
-已实现：`ExternalEvidence[]` 经 `web_adapter`（W→E 确定性映射、origin=WEB、
-不伪造 chunk 身份）进入共享 `generate_from_context()`（从 Phase 8
-GroundedAnswerService 原样抽出），复用同一套结构化解析 / Citation
-Validation / repair / claims 渲染；web system prompt 第三人称并明确
-UNTRUSTED 边界；citation URL 只能来自 provenance；zero evidence 不调用
-LLM；`/api/v2/ask`、SSE 与公网契约零变化；验收见
-`docs/evaluations/phase-12c-web-evidence-grounding.md`。
-
-### Phase 12D — Product Integration & Evaluation ✅（生产验收/封板）
-
-已实现：确定性非 LLM capability selection（auto/personal/web，自我指涉
-优先，ambiguous 保守默认 personal）；`/api/v2/ask(/stream)` additive
-`mode` 与 web source（origin/url/domain）；SSE `researching` 阶段；独立
-web quota / permission / concurrency；DNS rebinding 以 pinned resolution
-关闭；前端 mode 控件与安全外链；evaluation dataset（37 题）与真实测量。
-2026-08-28 已完成生产开启与验收：真实 provider smoke、HTTPS Web/SSE、
-开关、quota/concurrency、provider 故障隔离、auth v3 和备份均已通过；
-`WEB_RESEARCH_ENABLED=true`。本地验收与评估见
-`docs/evaluations/phase-12d-product-acceptance.md`、
-`docs/evaluations/phase-12-web-research-evaluation.md`；生产封板见
-`docs/evaluations/phase-12-production-acceptance-2026-08-28.md`。
-
-### Phase 12 明确不做
-
-- Session Evidence Reuse；
-- Full Conversation Memory；
-- Autonomous Agent Loop；
-- MCP Tool Runtime；
-- arbitrary browser/tool use。
-
-原设计里的 Session Evidence 原则保留为参考，但实际 Session Runtime 统一迁移到 Phase 15。
-
-## 5. Phase 13 — MCP Tool Runtime
-
-目标：让 Agent 能通过 MCP 调用受控、确定性、低风险工具。
-
-优先从 `zglab-tools` 中选择适合机器调用的纯逻辑能力，而不是机械 MCP 化全部工具。
-
-第一批候选包括：
-
-- JSON format / validate；
-- timestamp conversion；
-- Base64 / URL codec；
-- UUID generation；
-- text count / cleanup / deduplicate / sort；
-- regex utility；
-- JWT decode；
-- hash calculation；
-- naming conversion；
-- DOI / citation conversion；
-- token estimation。
-
-建议结构为：
+跨仓库正式边界：
 
 ```text
-Browser UI ──┐
-             ├── Shared Tool Core
-MCP Server ──┘
+zglab-tools Shared Tool Core
+        ↓
+Official TypeScript MCP Server
+        ↓ stdio
+Official Python MCP Client
+        ↓
+zglab-rag MCPToolRuntime
 ```
 
-生产初版 MCP Server 应优先作为 localhost/internal capability，而不是直接暴露公网。
+第一批 10 个 deterministic / side-effect-free tool：
 
-### Phase 13A — Tool Core Boundary & MCP Contracts ✅
+- JSON format / minify / validate；
+- Base64 encode / decode；
+- URL encode / decode；
+- text count / deduplicate；
+- timestamp convert。
 
-已实现：`zglab-tools` 侧新增 `src/tool-core/`（Shared Tool Core + Tool Contract + Tool
-Registry + MCP schema 准备 + 确定性 Vitest 测试），复用既有 `src/tools/*/logic.ts` 纯逻辑、
-不复制算法；`zglab-rag` 侧新增 `docs/mcp-tool-runtime.md` 冻结跨仓库边界（Option B：MCP
-Server 放 `zglab-tools`，stdio transport，Python 不 import Node package）。第一批 10 个
-deterministic pure tool（JSON format/minify/validate、Base64、URL、text count/deduplicate、
-timestamp），统一 `side_effect=none`、`network_access=false`。详见 `docs/mcp-tool-runtime.md`。
+生产使用独立 Node 22 runtime；MCP 仅 stdio/internal，不开放公网 endpoint。
 
-### Phase 13B — MCP Server Runtime ✅
+### Phase 14 — Agent Orchestrator ✅
 
-已实现（`zglab-tools/src/mcp/`）：官方 `@modelcontextprotocol/sdk` 1.30.0 的 stdio server，
-只暴露 `createToolRegistry()` 的 10 个 allowlisted tool；`tools/list` 复用 13A raw JSON
-Schema、`tools/call` 只走 `ToolRegistry.execute`；第一道 size gate =
-`StdioServerTransport.maxBufferSize = 1 MiB`，第二道 = 每工具 256 KiB；`structuredContent`
-携带权威结果、`content` 文本作兼容层；工具错误映射为 `isError:true` 安全结果；stdout 协议
-专用、诊断走 stderr；SIGINT/SIGTERM/stdin close 干净退出。真实官方 MCP Client integration
-test 通过。超时仍为 advertised policy 而非 in-process 抢占（13C 补齐 host deadline）。详见
-`zglab-tools/docs/mcp-server.md`。
-
-### Phase 13C — MCP Client + Capability Integration ✅
-
-已实现（`zglab-rag/src/zglab_rag/mcp/`）：Python Host `MCPToolRuntime`（官方 `mcp` 2.1.1
-客户端、stdio 长连接懒启动、host-side 显式 allowlist、child secret 隔离、`asyncio.timeout`
-hard deadline、超时/进程退出 → UNHEALTHY → lazy 重连、`structured_content` 权威结果映射、
-输入/输出 bound）。`zglab-tools` 增加 `npm run build:mcp` 编译产物 `dist-mcp/cli.js`（与浏览器
-`dist/` 分离）。真实跨语言验收通过（server `zglab-tools-mcp@0.0.1`、协议 `2025-11-25`、10 个
-tool、全部调用成功、clean shutdown）。不接 `/api/v2/ask`，不建 `MCPToolCapability`/
-`AgentObservation`（Phase 14）。详见 `docs/mcp-client-runtime.md` 与
-`docs/evaluations/phase-13c-mcp-client-integration.md`。
-
-## 6. Phase 14 — Agent Orchestrator
-
-在 PersonalKnowledgeSkill、WebResearchSkill 与 MCP Tool Runtime 都稳定后，再建立真正的
-Agent Control Plane：
+已完成并生产封板：
 
 ```text
-Agent Runtime
-├── Capability Registry
-├── Router / Planner
-├── Policy Engine
-├── Bounded Executor
-├── Observation Model
-└── Final Synthesis / Validation
+AgentRequest
+    ↓
+BoundedPlanner
+    ↓
+Validated AgentPlan
+    ↓
+BoundedAgentExecutor
+    ↓
+AgentObservation[]
+    ↓
+Final Synthesis
+    ↓
+AgentAnswer
 ```
 
-第一版采用 **Bounded Planner + Executor**，而不是无限 ReAct loop。
+当前 Planner 以 deterministic fast path 为主，支持：
 
-需要限制 max steps、research count、tool calls、deadline 与 capability permissions。
+- Personal；
+- Web；
+- Tool；
+- Personal → Web 组合。
 
-Agent 根据问题选择：
+冻结执行边界：
 
-- Personal Knowledge；
-- Web Research；
-- MCP Tool；
-- 或受控的多能力组合。
+```text
+max steps = 4
+Personal <= 1
+Web <= 1
+MCP <= 3
+overall deadline
+no retry / no replan / no infinite ReAct
+```
 
-## 7. Phase 15 — Session Context
+`ToolResult != Evidence`，Web content 不能修改冻结计划。
 
-Session Context 与 Personal Knowledge 必须保持概念隔离：
+---
+
+## 4. UX Track — Frontend / Product Experience Stabilization ← IMMEDIATE
+
+这是 Phase 14 后**最高优先级工作**，作为非编号 Maintenance / Product UX Track 执行，不改变已封板 Phase 编号。
+
+当前主要体验问题：
+
+- Composer / 输入框随着会话增长向下漂移；
+- 新回答完成后不会自动定位到最新消息；
+- SSE 过程中缺乏合理的智能跟随；
+- 用户主动上翻时缺少“回到最新消息”机制；
+- Header / Navigation 宽度与 viewport 行为不稳定；
+- 长会话整体布局不适合持续使用；
+- 后续 Multi-session Sidebar 若加入，当前页面结构可能需要重构。
+
+目标布局：
+
+```text
+┌────────────┬───────────────────────────────┐
+│            │ Header / Navigation           │
+│ Sessions   ├───────────────────────────────┤
+│ (future)   │                               │
+│            │ Message Scroll Area           │
+│            │                               │
+│            ├───────────────────────────────┤
+│            │ Sticky Composer               │
+└────────────┴───────────────────────────────┘
+```
+
+重点行为：
+
+- sticky composer；
+- independent message scroll container；
+- send / new response auto-scroll；
+- SSE 仅在用户位于底部附近时自动跟随；
+- 用户主动上翻时停止强制 scroll，并显示“回到最新消息”；
+- fixed/responsive header width；
+- desktop/mobile viewport 适配；
+- 不破坏现有 Auto / Personal / Web / Agent 功能。
+
+该 Track 完成后再正式进入 Phase 15。
+
+---
+
+## 5. Phase 15 — Conversation & Session Memory
+
+目标：把当前 request-oriented Agent 升级为真正的 multi-turn Conversation Agent。
+
+### 15A — Conversation Persistence
+
+建立明确的 Conversation / Message lifecycle：
+
+```text
+Conversation
+├── conversation_id
+├── title
+├── created_at
+└── updated_at
+
+Message
+├── message_id
+├── conversation_id
+├── role
+├── content
+└── created_at
+```
+
+产品支持：
+
+- 新建会话；
+- 会话列表；
+- 切换会话；
+- 历史会话恢复；
+- 删除/归档策略。
+
+### 15B — Multi-turn Context
+
+解决指代与连续理解：
+
+```text
+Q1: 我的 RAG 项目用了什么 embedding？
+A1: BGE-small-zh-v1.5 ...
+
+Q2: 那它跟 E5 相比呢？
+```
+
+Context assembly 需要 bounded，不允许简单无限拼接历史消息。
+
+### 15C — Context Compression
+
+长会话需要：
+
+- recent turns；
+- conversation summary；
+- relevant historical turns；
+- token / byte budget；
+- deterministic truncation policy。
+
+Summary 是 conversation state，不等于 Personal Knowledge。
+
+### 15D — Session Resource Reuse
+
+Session 不只是聊天记录，也是短期工作空间：
+
+```text
+Session Workspace
+├── Messages
+├── Conversation Summary
+├── Retrieved Personal Evidence
+├── Temporary Web Evidence
+├── Tool Results
+└── Derived Artifacts
+```
+
+允许受控复用：
+
+- temporary web evidence；
+- previous personal retrieval results；
+- tool artifacts；
+- derived summaries。
+
+必须有 TTL / max items / max bytes / provenance / invalidation。
+
+### 明确边界
 
 ```text
 Personal Knowledge      = reviewed, long-lived
-Web Evidence            = temporary evidence
-Session Context         = temporary conversation state
+Session Context         = conversation-scoped state
+Temporary Evidence      = request/session-scoped evidence
 Long-term Agent Memory  = separate future concern
 ```
 
-Phase 15 才实现：
+Phase 15 不自动把聊天内容写入 Personal Knowledge，也不建立无边界长期用户画像。
 
-- limited conversation reference context；
-- temporary web evidence reuse；
-- tool artifact reuse；
-- lightweight ephemeral session store；
-- TTL / max sessions / max items / max bytes。
+---
 
-单实例初版不因为 Session Context 自动引入 Redis。
+## 6. Phase 16 — Retrieval Intelligence & Knowledge Graph
 
-## 8. Phase 16 — Owner Agent / Advanced Permissions
+目标：把当前“全库 Flat Chunk Top-K”逐步升级为“理解知识结构后再检索”。
 
-公网普通用户只允许安全、低副作用 capability。
+### 16A — Hierarchical / Structure-aware Retrieval
 
-未来 Owner Agent 才考虑：
+优先利用当前 Markdown / Git 已存在的结构：
 
-- authenticated owner-only capabilities；
-- private sources；
+```text
+Knowledge Domain
+    ↓
+Repository / Project
+    ↓
+Document Summary
+    ↓
+Section
+    ↓
+Chunk
+```
+
+建立 document-level metadata，例如：
+
+- document title；
+- repository / project；
+- document summary；
+- section outline；
+- keywords / topics；
+- provenance。
+
+目标流程：
+
+```text
+Question
+→ Candidate Documents
+→ Candidate Sections
+→ Detailed Chunks
+→ Evidence
+```
+
+Hierarchical Retrieval 优先于直接引入复杂 GraphRAG。
+
+### 16B — Knowledge Graph / Graph Retrieval
+
+Knowledge Graph 作为新的 retrieval path，而不是替换 Vector：
+
+```text
+Retrieval Layer
+├── Vector Retrieval
+├── Hierarchical Retrieval
+└── Graph Retrieval
+```
+
+重点解决：
+
+- entity relationship；
+- project ↔ technology；
+- person ↔ project ↔ experience；
+- multi-hop question；
+- cross-document aggregation。
+
+示例：
+
+```text
+Person
+ ├── developed → Project
+ ├── worked_on → Experience
+ └── uses → Technology
+
+Project
+ ├── uses → MCP
+ ├── uses → RAG
+ └── related_to → Knowledge Note
+```
+
+Graph 构建必须有 provenance，不能让模型生成的关系自动成为可信事实。
+
+### 16C — Retrieval Evaluation
+
+对比：
+
+- Vector；
+- Hierarchical；
+- Graph；
+- Hybrid combinations。
+
+根据真实 benchmark 决定生产默认，而不是为了使用 GraphRAG 而强行替换现有 Vector path。
+
+---
+
+## 7. Phase 17 — Agent Analyst
+
+目标：把当前 deterministic Planner 升级为“Fast Path + LLM Analyst”的混合分析层。
+
+不单独堆叠多个 LLM：
+
+```text
+Planner LLM
+→ Query Rewrite LLM
+→ Retrieval
+```
+
+而是把复杂请求的理解合并为统一 Analysis Stage：
+
+```text
+Question
++
+Session Context
++
+Knowledge Catalog
++
+Available Capabilities / Tools
+        ↓
+AgentAnalyst
+        ↓
+Structured AnalysisDecision
+```
+
+Analyst 可输出：
+
+- intent；
+- rewritten query / subqueries；
+- knowledge scope；
+- relevant project / document / section hints；
+- retrieval strategy；
+- capability selection；
+- bounded execution plan。
+
+示例：
+
+```text
+Question:
+“我的 RAG 项目与当前主流 Agentic RAG 相比还有哪些不足？”
+
+AnalysisDecision:
+- intent: personal_project_comparison
+- personal scope: zglab-rag / architecture / agent docs
+- personal query: zglab-rag retrieval and agent architecture
+- web query: current agentic RAG architecture
+- plan: Personal → Web → Synthesis
+```
+
+简单请求继续走 deterministic fast path：
+
+```text
+“格式化这个 JSON”
+→ json_format
+```
+
+不要为了 Agent 化让所有请求都多一次 LLM planner 调用。
+
+### 安全原则
+
+```text
+Analyst proposes
+Policy Validator validates
+Executor enforces
+```
+
+LLM Analyst 永远不直接拥有无限执行权。
+
+---
+
+## 8. Phase 18 — Advanced Agent Autonomy / Bounded ReAct
+
+只有 Session、Retrieval Intelligence 与 Analyst 都稳定后，才提高自治能力。
+
+目标从：
+
+```text
+Analyze
+→ Plan
+→ Execute
+→ Answer
+```
+
+升级为：
+
+```text
+Analyze
+→ Plan
+→ Execute
+→ Observe
+→ Evaluate
+       ↓
+   need replan?
+   ├── no  → Answer
+   └── yes → bounded Replan
+```
+
+第一版必须保持 bounded：
+
+- `max_replans = 1` 起步；
+- max steps；
+- max research；
+- max tool calls；
+- overall deadline；
+- no recursive/unbounded ReAct；
+- no autonomous permission escalation。
+
+后续再评估：
+
+- plan repair；
+- limited retry；
+- alternative retrieval；
+- observation evaluator；
+- bounded ReAct-like loop。
+
+不要直接实现：
+
+```python
+while not done:
+    think()
+    act()
+```
+
+---
+
+## 9. Phase 19 — Owner Agent / Advanced Permissions
+
+公网普通用户继续只允许低风险 capability。
+
+Owner Agent 才考虑：
+
+- owner-only private knowledge；
+- authenticated private sources；
 - GitHub write；
-- file/deploy/admin operations；
-- human confirmation / step-up authentication；
-- destructive-operation policy。
+- filesystem write；
+- deploy / admin operations；
+- human confirmation；
+- step-up authentication；
+- destructive-operation policy；
+- richer long-term memory / owner profile（若届时仍有明确价值）。
 
-MCP Tool annotation 只能作为 hint；真正权限仍由 Agent Host / Policy Engine 强制执行。
+MCP annotations 只能作为 hint，真正权限仍由 Agent Host / Policy Engine 强制执行。
 
-## 9. 文档优先级与历史记录
+---
 
-### 当前设计文档
+## 10. Cross-phase Quality / Maintenance Track
 
-以下文档应与本 Roadmap 保持一致：
+以下问题不需要等到某个 Product Phase 才能修：
+
+- frontend UX / accessibility / responsive layout；
+- production observability / metrics；
+- latency / RSS / cost profiling；
+- Reranker quantization / cache；
+- evaluation expansion；
+- test flakiness；
+- SQLite / filesystem environment issues；
+- Node/Python runtime maintenance；
+- documentation reconciliation；
+- security fixes；
+- deployment / rollback hardening。
+
+原则：
+
+> **用户体验或生产稳定性问题优先于继续增加新的 Agent capability。**
+
+---
+
+## 11. 文档与历史记录
+
+当前设计文档应与本 Roadmap 保持一致：
 
 - `README.md`
 - `AGENTS.md`
 - `docs/development-plan.md`
 - `docs/architecture.md`
-- `docs/web-research-skill.md`
-- Phase 11 authentication / API v2 / production acceptance 文档
+- `docs/production-architecture.md`
+- `docs/agent-architecture.md`
+- `docs/agent-product.md`
+- Web / MCP / Auth 对应设计文档。
 
-### 历史验收记录
+历史验收文档记录当时真实发生的状态，不因为未来 Roadmap 调整而重写历史。
 
-以下类型文件记录当时真实发生的阶段状态，不因为 Roadmap v2 而重写历史：
+例如：
 
 ```text
-docs/evaluations/phase-7-*.md
-docs/evaluations/phase-9-*.md
-docs/evaluations/phase-10-*.md
+docs/evaluations/phase-11-*.md
+docs/evaluations/phase-12-*.md
+docs/evaluations/phase-13-*.md
+docs/evaluations/phase-14-*.md
 ```
 
-`docs/evaluations/phase-11-authentication-acceptance.md` 记录 2026-08-25 本地封装完成、
-生产尚未迁移时的真实状态；2026-08-26 的生产迁移与最终封板由独立生产验收文档记录。
+旧文档中的 future phase 编号只表示当时规划，不再具有当前 Roadmap 权威性。
 
-如果历史验收记录写有当时的 “future Phase 11”，它只表示当时的规划，不再具有当前 Roadmap 权威性。
+---
 
-### Public API v1
+## 12. Codex / Coding Agent 执行规则
 
-`docs/public-api.md` 首先是 Phase 9 Public API v1 的冻结记录。
-其中任何旧的 future-phase 编号都不改变 v1 已冻结的 endpoint / response / SSE 事实；
-未来 authenticated API 通过 Phase 11 的新版本契约演进。
-
-## 10. Codex 执行规则
-
-任何 Codex / Coding Agent 开始 Phase 11+ 任务前必须：
+开始新任务前必须：
 
 1. 阅读 `AGENTS.md`；
 2. 阅读本文档；
-3. 将本文档视为 Phase 11+ 的 Roadmap authority；
-4. 不根据历史文档中的旧 Phase 编号提前实现功能；
-5. 每次只实现当前 Phase 或明确授权的垂直切片；
-6. 如发现文档冲突，先报告冲突，不自行混合两个 Phase。
+3. 将本文档视为当前 Roadmap authority；
+4. 不根据历史文档中的旧 future-phase 编号提前实现功能；
+5. 每次只实现当前明确授权的 Phase / Track / vertical slice；
+6. 如发现文档与生产现实冲突，先报告并修正文档漂移；
+7. 不因为某项技术“更 Agentic”而跳过更高优先级的产品体验和稳定性问题。
 
-当前唯一允许开始的下一 Product Phase 是：
+当前唯一优先执行项：
 
-> **Phase 13 — MCP Tool Runtime**（Phase 12 的 12A–12D 已完成本地实现与
-> 验收；Phase 12 生产验收仍待真实 provider smoke 与生产开启；前提：
-> 获得明确授权）
+> **UX Track — Frontend / Product Experience Stabilization**
+
+UX Track 完成并验收后，下一 Product Phase：
+
+> **Phase 15 — Conversation & Session Memory**
