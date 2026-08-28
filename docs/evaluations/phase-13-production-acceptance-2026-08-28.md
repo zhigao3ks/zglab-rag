@@ -1,6 +1,38 @@
 # Phase 13 生产验收记录（2026-08-28）
 
-> 结论：**Phase 13 production accepted: NO**。生产 `MCP_ENABLED` 保持关闭；不得封板。
+> 结论：**Phase 13 production accepted: NO**。生产 MCP 已部署并启用，但不得封板。
+
+## 后续生产迁移（2026-08-28）
+
+此前 Node 18 STOP 后，生产以并存 runtime 安装官方 Node **v22.23.2**（Linux x64）；官方
+`SHASUMS256.txt` 校验通过。系统 `/usr/bin/node` 保持 **v18.19.1**，未替换、未移除。
+
+- Node：`/opt/zglab-mcp/node/node-v22.23.2-linux-x64/bin/node`；
+- MCP artifact：`/opt/zglab-mcp/mcp/zglab-tools/03796f6f7ec0f40ad24183dc9f25e2732a4e63c7/`；
+  manifest 为 `zglab-tools-mcp@0.0.1`、source commit `03796f6...`、tool_count=10；
+- runtime/artifact 均为 root-owned，zglab 仅经 group 取得 read/execute、无 write；
+- production app source：`7d755c6`；部署前保存 app、.env、knowledge/auth 双库快照至
+  `/opt/zglab-rag/rollback/phase13-20260828T152200Z/`。
+
+实际以 `sudo -u zglab` 运行 official Python MCP Client → Node 22 → production artifact：
+server `zglab-tools-mcp@0.0.1`、protocol `2025-11-25`、10 tools、startup 626.367 ms、
+典型 calls 126.104 ms、clean shutdown=true。API 启动后没有 Node child，保持 lazy stdio runtime。
+
+MCP true→false→true kill-switch 演练中，每次 API `/health`、`/ready` 均为 200；最终
+`MCP_ENABLED=true`。无 `/mcp`、`/api/v2/tool` 或新增监听端口；匿名 auth/me 为 401。
+Nginx、API、backup/sync timer 均 active；knowledge/auth integrity_check=ok；auth.db=0600。
+
+本地全量 pytest 已用 `/dev/shm` tmpfs 临时目录完成：**532 passed, 4 skipped**；此前 `/tmp` 和
+工作区 ext4 journal 的 SQLite WAL `jbd2_log_wait_commit` stall 已隔离为宿主 filesystem 问题，
+并非 MCP regression。ruff 与 git diff --check 均通过。
+
+### 未通过的最终 Gate
+
+为做真实 Personal/Web/SSE 回归创建的短生命周期受控 USER 在 activate 阶段得到
+`INVALID_REQUEST`；没有伪造成功结果。该账户已立即 disable 并 revoke sessions。因而本轮只能
+确认 health/ready、匿名 Auth 边界和 MCP internal smoke，**尚未完成 authenticated Personal/Web
+ask/SSE regression**。因此本记录顶部的 `production accepted: NO` 继续有效；虽然 MCP 当前保持
+启用，下一次维护窗口必须先以可用的受控账号完成上述四项回归，之后才可封板。
 
 ## 已完成的本地安全验证
 
