@@ -171,6 +171,23 @@ def test_internal_harness_single_personal_web_and_tool_reuse_results() -> None:
     assert tool_answer.sources == ()
 
 
+def test_tool_string_result_is_not_json_encoded_again() -> None:
+    request = AgentRequest("r", "JSON 格式化：hello")
+    plan = BoundedPlanner().plan(request)
+    observation = asyncio.run(executor().execute(request, plan)).observations[0]
+    string_observation = observation.__class__(
+        observation.observation_id,
+        observation.origin,
+        observation.status,
+        observation.summary,
+        observation.step_id,
+        tool_id=observation.tool_id,
+        structured_result='{\n  "a": 1\n}',
+    )
+    answer = AgentSynthesizer().synthesize(request, plan, (string_observation,))
+    assert answer.answer == '{\n  "a": 1\n}'
+
+
 def test_personal_then_web_is_sequential_and_only_multi_uses_synthesis() -> None:
     request = AgentRequest("r", "我的项目和当前主流架构相比有什么区别？")
     plan = BoundedPlanner().plan(request)

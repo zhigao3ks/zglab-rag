@@ -100,8 +100,12 @@ class AgentSynthesizer:
                     (observation,),
                     failure_reason=observation.summary,
                 )
-            rendered = json.dumps(
-                observation.structured_result, ensure_ascii=False, indent=2, default=str
+            rendered = (
+                observation.structured_result
+                if isinstance(observation.structured_result, str)
+                else json.dumps(
+                    observation.structured_result, ensure_ascii=False, indent=2, default=str
+                )
             )
             return AgentAnswer(AgentAnswerStatus.ANSWERED, rendered, (observation,))
         if isinstance(observation, (PersonalKnowledgeObservation, WebResearchObservation)):
