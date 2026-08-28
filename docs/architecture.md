@@ -448,6 +448,9 @@ UUID / hash / JWT / regex / DOI 暂缓或排除（ReDoS、异步、非确定或�
 
 ## 12. Phase 14 — Agent Control Plane
 
+Phase 14A 已完成 AgentRequest / AgentObservation contracts 与显式 Personal、Web、MCP
+adapter；Tool Observation 不成为 Evidence。当前仍没有自动路由、Planner、loop 或 final synthesis。
+
 只有当 PersonalKnowledgeSkill、WebResearchSkill 和 MCP Runtime 都稳定后，才引入：
 
 ```text

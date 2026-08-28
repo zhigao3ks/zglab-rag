@@ -55,7 +55,8 @@ Phase 0–10  Personal Knowledge Assistant Foundation     ✅
 Phase 11    Authentication & Access Control             ✅ SEALED
 Phase 12    Agent Capability Foundation & Web Research  ✅ SEALED
 Phase 13    MCP Tool Runtime                            ✅ SEALED
-Phase 14    Agent Orchestrator                          ← 当前阶段
+Phase 14A   Agent Contracts & Observation Model         ✅
+Phase 14B   Router / Bounded Planner                    ← 当前阶段
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
 ```

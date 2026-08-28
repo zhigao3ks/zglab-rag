@@ -71,6 +71,9 @@ Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions
 ```
 
+Phase 14A 已建立 Agent Contracts & Observation Model：三类既有能力可经显式 adapter 产出
+`AgentObservation`，但尚无自动路由、Planner、loop 或产品入口。
+
 完整新路线见 [`docs/roadmap-v2.md`](docs/roadmap-v2.md)。
 
 ## Phase 11 — Authentication & Access Control（已完成并生产验收）
