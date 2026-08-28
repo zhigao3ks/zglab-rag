@@ -120,8 +120,8 @@ Phase 13B   MCP Server Runtime                          ✅ 已完成
 Phase 13C   MCP Client + Capability Integration         ✅ 已完成
 Phase 13D   Security / Evaluation / Production          ✅ COMPLETE / PRODUCTION ACCEPTED / SEALED
 Phase 14A   Agent Contracts & Observation Model         ✅
-Phase 14B   Router / Bounded Planner                    ⏳
-Phase 14C   Executor & Final Synthesis                  ⏳
+Phase 14B   Router / Bounded Planner                    ✅
+Phase 14C   Executor & Final Synthesis                  ✅
 Phase 14D   Product / Evaluation / Production           ⏳
 Phase 15    Session Context
 Phase 16    Owner Agent / Advanced Permissions

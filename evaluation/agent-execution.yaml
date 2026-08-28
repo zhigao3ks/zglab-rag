@@ -1,0 +1,21 @@
+version: 1
+phase: 14c
+mode: offline_deterministic_fakes
+cases:
+  - {id: personal_only, capability: personal}
+  - {id: web_only, capability: web}
+  - {id: tool_only, capability: tool}
+  - {id: personal_web, capability: multi}
+  - {id: capability_failure, expected: blocked_dependency}
+  - {id: deadline, expected: deadline_exceeded}
+  - {id: invalid_plan, expected: rejected_before_execution}
+metrics:
+  execution_success_rate: ratio
+  budget_violation_rate: ratio
+  unnecessary_synthesis_rate: ratio
+  tool_retry_rate: ratio
+  citation_valid_rate: ratio
+  personal_integrity_rate: ratio
+targets:
+  budget_violation_rate: 0
+  tool_retry_rate: 0

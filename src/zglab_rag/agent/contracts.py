@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from zglab_rag.auth.models import AuthenticatedPrincipal
 from zglab_rag.capabilities.contracts import CapabilityResult
+from zglab_rag.generation.contracts import AnswerSource
 
 
 class ObservationOrigin(StrEnum):
@@ -20,6 +21,14 @@ class ObservationStatus(StrEnum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
     FAILED = "failed"
     DISABLED = "disabled"
+    BLOCKED = "blocked"
+
+
+class AgentAnswerStatus(StrEnum):
+    ANSWERED = "answered"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    FAILED = "failed"
+    NEEDS_INPUT = "needs_input"
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +52,7 @@ class AgentObservation:
     origin: ObservationOrigin
     status: ObservationStatus
     summary: str | None = None
+    step_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,3 +72,14 @@ class ToolObservation(AgentObservation):
     error_code: str | None = None
     error_message: str | None = None
     metadata: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class AgentAnswer:
+    """Internal final answer; sources are only existing grounded provenance."""
+
+    status: AgentAnswerStatus
+    answer: str
+    observations: tuple[AgentObservation, ...]
+    sources: tuple[AnswerSource, ...] = ()
+    failure_reason: str | None = None
