@@ -1,6 +1,6 @@
 # Phase 15A — Conversation Persistence
 
-Phase 15A1 建立 framework-free domain 与独立 SQLite storage；15A2 在此基础上接入 authenticated Conversation API 和可选 ask persistence。当前仍不加载历史进入生成上下文，也没有 UI/Sidebar。
+Phase 15A1 建立 framework-free domain 与独立 SQLite storage；15A2 在此基础上接入 authenticated Conversation API 和可选 ask persistence；15A3 把 Conversation API 接入 Vue 前端，完成 Session Sidebar 与历史恢复。历史消息始终只是 persisted UI history，从不进入生成上下文。
 
 ## 独立生命周期
 
@@ -83,8 +83,39 @@ conversation_id: int | null
 
 最重要的是：`conversation_id` 只表示 ownership + persistence。repository history **不会**被读取到 retrieval、prompt、capability 或 Agent context。
 
+## 15A3 Session Sidebar + History Restore
+
+前端在既有 Assistant viewport shell 内正式加入 sibling Session Sidebar，不重写 FOLLOWING/DETACHED 滚动状态机：
+
+```text
+Assistant Layout
+├── Session Sidebar
+└── Assistant Workspace
+```
+
+新增前端模块：
+
+```text
+web/src/conversation/api.ts        # /api/v2/conversations REST client
+web/src/components/SessionSidebar.vue
+web/src/views/AssistantView.vue    # session state + wiring
+```
+
+产品行为：
+
+- **列表**：进入 Assistant 后加载 conversations，按后端顺序（`updated_at DESC, id DESC`）展示；有历史会话时默认选中最近一个并恢复其消息，否则保持 empty state；
+- **新建**：点击「新建会话」创建 Conversation 并激活，清空本地消息；标题使用固定默认值「新对话」，不使用 LLM；后续 ask 携带该 `conversation_id`；
+- **切换/恢复**：`GET /api/v2/conversations/{id}/messages` 返回的 USER/ASSISTANT 消息仅映射为本地 `ChatMessage[]` 展示；ASSISTANT 历史渲染为纯文本回答卡（sources / request_id 不持久化，不参与恢复）；**恢复的历史消息从不重新发送给 ask API**；
+- **ask 绑定**：`askStream` additive 增加 `conversationId` 参数，仅在有 active conversation 时发送 `conversation_id`；无 active conversation 时不发送、也不自动创建会话；
+- **删除**：两步确认（先点删除再确认）；删除当前会话后从 sidebar 移除、清空消息、`activeConversationId = null`；`NOT_FOUND`（另一 session 已删除）按幂等处理；
+- **NOT_FOUND 安全处理**：恢复/删除/ask 任一环节返回 `NOT_FOUND` 时，展示安全提示「内容不存在或已被删除。」、刷新列表、清空 active conversation 并回到 empty state，从不展示原始 server message；`NOT_FOUND` 已加入前端公共错误码映射；
+- **pending 保护**：ask 进行中忽略切换/新建/删除，避免 in-flight 回调写入被替换的本地历史视图；
+- **Responsive**：desktop 为固定 260px 侧栏；≤768px 为 drawer + backdrop，由「会话」按钮开关，选择后自动收起。
+
+同步修复前端契约：`NOT_FOUND` 加入 `PublicErrorCode` 与 `ERROR_LABELS`。
+
 ## 明确不在 15A 范围内
 
-- Assistant Sidebar、前端 history 或 session 恢复；
 - multi-turn prompt/context、summary、compression 或任何 evidence/tool reuse；
+- 会话标题 LLM 自动生成；
 - Redis 与 long-term memory。

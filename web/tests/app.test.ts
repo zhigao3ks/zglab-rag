@@ -11,10 +11,29 @@ import type { AskStreamCallbacks } from "../src/api/client";
 import type { PublicAskResponse } from "../src/api/contracts";
 import { authState } from "../src/auth/store";
 
-const { askStreamMock } = vi.hoisted(() => ({ askStreamMock: vi.fn() }));
+const { askStreamMock, conversationApi } = vi.hoisted(() => ({
+  askStreamMock: vi.fn(),
+  conversationApi: {
+    listConversations: vi.fn(),
+    createConversation: vi.fn(),
+    deleteConversation: vi.fn(),
+    listConversationMessages: vi.fn(),
+  },
+}));
 
 vi.mock("../src/api/client", () => ({
   askStream: (...args: unknown[]) => askStreamMock(...args),
+}));
+
+// Phase 15A3: the assistant loads conversations on mount; default to an
+// empty list so the pre-existing scenarios stay deterministic. Session
+// behavior has dedicated coverage in session.test.ts.
+vi.mock("../src/conversation/api", () => ({
+  listConversations: (...args: unknown[]) => conversationApi.listConversations(...args),
+  createConversation: (...args: unknown[]) => conversationApi.createConversation(...args),
+  deleteConversation: (...args: unknown[]) => conversationApi.deleteConversation(...args),
+  listConversationMessages: (...args: unknown[]) =>
+    conversationApi.listConversationMessages(...args),
 }));
 
 /** Mount the authenticated assistant view with a stub router. */
@@ -80,6 +99,12 @@ async function typeAndSubmit(wrapper: ReturnType<typeof mount>, question: string
 
 beforeEach(() => {
   askStreamMock.mockReset();
+  conversationApi.listConversations.mockReset();
+  conversationApi.listConversations.mockResolvedValue({ ok: true, data: [] });
+  conversationApi.createConversation.mockReset();
+  conversationApi.deleteConversation.mockReset();
+  conversationApi.listConversationMessages.mockReset();
+  conversationApi.listConversationMessages.mockResolvedValue({ ok: true, data: [] });
 });
 
 afterEach(() => {

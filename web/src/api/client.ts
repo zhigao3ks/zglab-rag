@@ -64,12 +64,17 @@ function extractEnvelope(body: unknown): { code: PublicErrorCode; requestId: str
  * Run one ask/stream request. Resolves when the stream is finished for
  * any reason (completed, error event, pre-stream JSON error, network
  * failure or abort); it never throws for visitor-facing failures.
+ *
+ * Phase 15A3: conversationId is an additive persistence-only binding for
+ * the CURRENT question. It carries no history; when null the request body
+ * is byte-identical to the pre-15A3 shape.
  */
 export async function askStream(
   question: string,
   callbacks: AskStreamCallbacks,
   signal: AbortSignal,
   mode: AskMode = "auto",
+  conversationId: number | null = null,
 ): Promise<void> {
   let response: Response;
   try {
@@ -78,11 +83,18 @@ export async function askStream(
     if (csrfToken !== null) {
       headers["X-CSRF-Token"] = csrfToken;
     }
+    const payload: { question: string; mode: AskMode; conversation_id?: number } = {
+      question,
+      mode,
+    };
+    if (conversationId !== null) {
+      payload.conversation_id = conversationId;
+    }
     response = await fetch(askStreamUrl(), {
       method: "POST",
       credentials: "same-origin",
       headers,
-      body: JSON.stringify({ question, mode }),
+      body: JSON.stringify(payload),
       signal,
     });
   } catch (error) {

@@ -90,6 +90,28 @@ describe("askStream", () => {
     expect(JSON.parse(init.body)).toEqual({ question: "问题？", mode: "web" });
   });
 
+  it("adds conversation_id only when a session conversation is active", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse(STAGES + COMPLETED));
+    vi.stubGlobal("fetch", fetchMock);
+    await askStream("问题？", makeCallbacks(), new AbortController().signal, "auto", 42);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      question: "问题？",
+      mode: "auto",
+      conversation_id: 42,
+    });
+  });
+
+  it("omits conversation_id when no session conversation is active", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(sseResponse(STAGES + COMPLETED));
+    vi.stubGlobal("fetch", fetchMock);
+    await askStream("问题？", makeCallbacks(), new AbortController().signal, "auto", null);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ question: "问题？", mode: "auto" });
+  });
+
   it("maps pre-stream JSON errors (rate limited)", async () => {
     vi.stubGlobal(
       "fetch",

@@ -23,7 +23,10 @@ export type PublicErrorCode =
   | "API_RETIRED"
   // Phase 12D capability-policy codes.
   | "CAPABILITY_DISABLED"
-  | "CAPABILITY_DENIED";
+  | "CAPABILITY_DENIED"
+  // Phase 15A2 conversation resources; owner mismatch and nonexistent ids
+  // intentionally share this code.
+  | "NOT_FOUND";
 
 /** Frontend-only code for fetch/network/protocol failures. */
 export type FrontendErrorCode = PublicErrorCode | "NETWORK";
@@ -111,6 +114,7 @@ export const ERROR_LABELS: Record<FrontendErrorCode, string> = {
   API_RETIRED: "该接口版本已停用，请刷新页面。",
   CAPABILITY_DISABLED: "联网检索功能当前未开启。",
   CAPABILITY_DENIED: "当前账号未获授权使用联网检索。",
+  NOT_FOUND: "内容不存在或已被删除。",
   NETWORK: "网络连接异常，请稍后重试。",
 };
 
@@ -130,7 +134,8 @@ export function isPublicErrorCode(value: unknown): value is PublicErrorCode {
     value === "SERVICE_DISABLED" ||
     value === "API_RETIRED" ||
     value === "CAPABILITY_DISABLED" ||
-    value === "CAPABILITY_DENIED"
+    value === "CAPABILITY_DENIED" ||
+    value === "NOT_FOUND"
   );
 }
 

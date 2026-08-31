@@ -8,11 +8,13 @@
 Public Landing
 + Login / Activation
 + Authenticated Assistant
++ Session Sidebar（会话列表 / 新建 / 切换 / 删除）
++ History Restore（历史恢复，仅展示）
 + Auto / Personal / Web / Agent modes
 + SSE status updates
 ```
 
-Phase 14 已完成 Agent 产品接入并生产封板；UX Track 已完成。下一 Product Phase 是 Phase 15 Session Memory，但尚未开始。
+Phase 14 已完成 Agent 产品接入并生产封板；UX Track 已完成。Phase 15A（Conversation Persistence：domain/storage、authenticated API + ask 持久化、Session Sidebar + 历史恢复）已完成；下一子阶段是 15B Multi-turn Context，历史消息在那之前不参与任何生成上下文。
 
 ## 技术栈
 
@@ -73,12 +75,14 @@ web/
 │   │   ├── ActivateView.vue
 │   │   └── AssistantView.vue
 │   ├── conversation/
+│   │   ├── api.ts
 │   │   ├── types.ts
 │   │   └── useConversationScroll.ts
 │   ├── components/
 │   │   ├── AssistantHeader.vue
 │   │   ├── ConversationView.vue
 │   │   ├── QuestionComposer.vue
+│   │   ├── SessionSidebar.vue
 │   │   ├── AnswerCard.vue
 │   │   ├── SourceList.vue
 │   │   └── StatusIndicator.vue
@@ -90,6 +94,7 @@ web/
     ├── client.test.ts
     ├── components.test.ts
     ├── conversation-scroll.test.ts
+    ├── session.test.ts
     └── sse.test.ts
 ```
 
@@ -149,25 +154,35 @@ accepted → planning → executing → synthesizing → validating → complete
 
 前端只渲染公开 stage；Agent plan、observation、tool raw data、网页正文与内部推理不会通过 SSE 下发。
 
-## 当前 Conversation 语义
+## Conversation / Session 语义（Phase 15A3）
 
-当前页面中的 `messages` 只是本地 view-model：
+后端 Phase 15A2 提供 owner-scoped Conversation API 与 ask 可选持久化；前端 Phase 15A3 通过 Session Sidebar 接入：
 
-- 历史消息只存在当前页面内存；
-- 下一次请求只发送当前 question + mode；
-- 不发送历史消息；
-- 不写 localStorage；
-- 不存在 conversation_id；
-- 不存在后端 Conversation / Message persistence；
-- 不存在 Session Memory。
+- 有 active conversation 时，ask 请求 body 携带 `conversation_id`，只表示 ownership + persistence；
+- 无 active conversation 时，ask 不携带 `conversation_id`，行为与独立请求完全一致，也不会自动创建会话；
+- 切换会话时通过 `GET /api/v2/conversations/{id}/messages` 恢复历史，USER/ASSISTANT 仅映射为本地 `ChatMessage[]` 展示；
+- **历史恢复只是展示**：恢复的消息从不重新发送给 ask API，也从不进入 retrieval、prompt、capability 或 Agent context；
+- 新建会话使用固定标题「新对话」，不使用 LLM；
+- 删除带两步确认；`NOT_FOUND` 统一回退到安全 empty state，不展示原始 server message。
 
-这些属于 Phase 15，当前 UX Track 不得提前实现。
+当前语义仍然是：
+
+```text
+History = persisted UI history
+
+Current question only
+    ↓
+LLM / Agent
+```
+
+Multi-turn context、summary、compression、evidence/tool reuse 属于 Phase 15B+。
 
 ## Assistant 布局
 
 `AssistantView.vue` 使用受 viewport 约束的应用 shell：
 
 ```text
+Session Sidebar（desktop 常驻 / mobile drawer）
 account bar
 password form（optional）
 AssistantHeader
@@ -180,13 +195,13 @@ footer
 
 `app-shell` 固定为 `100dvh`，Header、account controls、Composer Dock 和 footer 均不参与消息滚动；只有 Message Scroller 使用 `overflow-y: auto`。窄屏时 account controls 会换行，composer controls 重排，textarea 有 viewport-relative max-height 并在内部滚动。长答案、来源和用户消息使用换行规则，避免横向溢出。
 
-未来的 Session Sidebar 仅保留布局演进空间，当前没有 Sidebar 数据或功能。
+Session Sidebar（`SessionSidebar.vue`）是 Phase 15A3 加入的 sibling：desktop 固定 260px；≤768px 时为可展开/收起的 drawer + backdrop（「会话」按钮开关），不影响既有 viewport shell 与滚动状态机。
 
 ## Conversation Scroll State
 
 ```text
 Assistant Layout
-├── future Session Sidebar slot
+├── Session Sidebar
 └── Workspace
     ├── Header / Navigation
     └── Chat Area
@@ -240,6 +255,8 @@ DETACHED
 
 UX Track 测试还覆盖 scroll state machine、提交自动到底、SSE follow/detach、error 的相同策略，以及 jump-to-latest。
 
+Phase 15A3 测试（`session.test.ts`）还覆盖：conversation list 加载与默认恢复最近会话、新建会话并绑定 ask、切换会话恢复历史、ask 携带 `conversation_id`、历史消息不重发、两步确认删除、active 会话删除后的状态、`NOT_FOUND` 安全回退（恢复 / ask 两条路径）、sidebar active 状态与 mobile drawer 开合、pending 期间禁止切换。`client.test.ts` 覆盖 `conversation_id` 仅在有 active conversation 时进入请求 body。
+
 jsdom 适合验证逻辑状态；真实 CSS viewport / responsive geometry 应在浏览器 smoke 中验证。
 
 ## Roadmap
@@ -248,7 +265,7 @@ jsdom 适合验证逻辑状态；真实 CSS viewport / responsive geometry 应�
 
 ```text
 UX Track   Frontend / Product Experience Stabilization   ✅ COMPLETE
-Phase 15   Conversation & Session Memory                 ← NEXT PRODUCT PHASE
+Phase 15   Conversation & Session Memory                 ← IN PROGRESS (15A ✅, 15B NEXT)
 Phase 16   Retrieval Intelligence & Knowledge Graph
 Phase 17   Agent Analyst
 Phase 18   Advanced Agent Autonomy / Bounded ReAct

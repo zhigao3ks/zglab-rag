@@ -44,7 +44,7 @@ Phase 14    Agent Orchestrator                              ✅ SEALED
 
 UX Track     Frontend / Product Experience Stabilization   ✅ COMPLETE
 
-Phase 15    Conversation & Session Memory                   ← NEXT PRODUCT PHASE
+Phase 15    Conversation & Session Memory                   ← IN PROGRESS (15A ✅, 15B NEXT)
 Phase 16    Retrieval Intelligence & Knowledge Graph
 Phase 17    Agent Analyst
 Phase 18    Advanced Agent Autonomy / Bounded ReAct
@@ -228,7 +228,7 @@ no retry / no replan / no infinite ReAct
 
 目标：把当前 request-oriented Agent 升级为真正的 multi-turn Conversation Agent。
 
-### 15A — Conversation Persistence
+### 15A — Conversation Persistence ✅ COMPLETE
 
 #### 15A1 — Conversation Domain & Persistence Foundation ✅ COMPLETE
 
@@ -236,7 +236,21 @@ no retry / no replan / no infinite ReAct
 
 #### 15A2 — Authenticated Conversation API + Ask Persistence ✅ COMPLETE
 
-已完成 owner-scoped authenticated Conversation API，以及 `/api/v2/ask` / `/api/v2/ask/stream` 的可选 `conversation_id` 持久化。历史消息仍不进入 retrieval、prompt、capability 或 Agent context；15A 与整个 Phase 15 仍未完成。
+已完成 owner-scoped authenticated Conversation API，以及 `/api/v2/ask` / `/api/v2/ask/stream` 的可选 `conversation_id` 持久化。历史消息仍不进入 retrieval、prompt、capability 或 Agent context。
+
+#### 15A3 — Session Sidebar + History Restore ✅ COMPLETE
+
+已完成 Vue 前端 Session Sidebar 与历史恢复（Phase 15A 收尾）：
+
+- Assistant Layout 正式加入 `Session Sidebar` sibling：会话列表（按后端 `updated_at DESC` 顺序展示）、新建会话、active 状态、删除入口；
+- 新建会话使用固定默认标题「新对话」，不使用 LLM 生成标题；创建后立即激活并清空本地消息，后续 ask 携带该 `conversation_id`；
+- 切换会话通过 owner-scoped `GET /api/v2/conversations/{id}/messages` 恢复历史，USER/ASSISTANT 仅映射为本地 `ChatMessage[]` 展示；**历史消息从不重新发送给 ask API，也从不进入 retrieval、prompt、capability 或 Agent context**；
+- 删除会话带两步确认；删除 active 会话后回到安全 empty state；
+- 服务端 404（`NOT_FOUND`，含另一 session 删除的场景）统一回退到安全提示 + 刷新列表 + 清空 active conversation，不展示原始 server message；
+- 无 active conversation 时 ask 不携带 `conversation_id`，也不自动创建会话；
+- desktop 为固定宽度侧栏；mobile 为可展开/收起的 drawer + backdrop，不改变既有 viewport shell 与 FOLLOWING/DETACHED 状态机。
+
+至此 15A Conversation Persistence 整体完成。在 15B Multi-turn Context 落地之前，历史消息仍然只是 persisted UI history。
 
 建立明确的 Conversation / Message lifecycle：
 
