@@ -200,7 +200,6 @@ FOLLOWING
 DETACHED
 ```
 
-- send：主动恢复 FOLLOWING 并定位最新；
 - 初始为 `FOLLOWING`；near-bottom threshold 为 96px；
 - send：主动恢复 FOLLOWING 并在 DOM 更新后定位最新；
 - FOLLOWING：SSE stage / completed / error 更新后继续跟随；

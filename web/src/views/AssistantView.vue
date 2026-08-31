@@ -155,8 +155,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app-shell">
-    <div class="account-bar" data-testid="account-bar">
+  <div class="app-shell assistant-layout">
+    <div class="assistant-workspace" data-testid="assistant-workspace">
+      <div class="account-bar" data-testid="account-bar">
       <span class="account-bar__user" data-testid="account-username">
         {{ authState.user?.username }}
       </span>
@@ -240,9 +241,10 @@ onUnmounted(() => {
         <QuestionComposer :disabled="pending" @submit="submit" />
       </div>
     </main>
-    <footer class="app-footer">
-      回答基于已允许公开的知识源生成，并附带可追溯的来源。
-    </footer>
+      <footer class="app-footer">
+        回答基于已允许公开的知识源生成，并附带可追溯的来源。
+      </footer>
+    </div>
   </div>
 </template>
 
@@ -251,8 +253,16 @@ onUnmounted(() => {
   height: 100dvh;
   overflow: hidden;
   display: flex;
-  flex-direction: column;
   background: var(--surface-page);
+}
+
+.assistant-workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .account-bar {

@@ -89,6 +89,9 @@ afterEach(() => {
 describe("empty state", () => {
   it("shows introduction and example prompts", () => {
     const wrapper = mountAssistant();
+    const workspace = wrapper.find('[data-testid="assistant-workspace"]');
+    expect(workspace.exists()).toBe(true);
+    expect(workspace.find('[data-testid="message-scroller"]').exists()).toBe(true);
     const empty = wrapper.find('[data-testid="empty-state"]');
     expect(empty.exists()).toBe(true);
     expect(empty.text()).toContain("ZGLab Personal Knowledge Assistant");
