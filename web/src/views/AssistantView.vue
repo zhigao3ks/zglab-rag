@@ -50,14 +50,42 @@ const activeConversationId = ref<number | null>(null);
 const sidebarOpen = ref(false);
 const conversationNotice = ref<string | null>(null);
 let conversationSwitchSeq = 0;
+let conversationGeneration = 0;
+let conversationRefreshSeq = 0;
+let conversationStateActive = true;
+
+function invalidateConversationRequests(): void {
+  conversationGeneration += 1;
+  conversationSwitchSeq += 1;
+  conversationRefreshSeq += 1;
+}
+
+function resetConversationState(): void {
+  invalidateConversationRequests();
+  conversations.value = [];
+  activeConversationId.value = null;
+  messages.value = [];
+  nextId = 1;
+  sidebarOpen.value = false;
+}
 
 async function handleAuthLost(): Promise<void> {
+  resetConversationState();
   clearAuth();
   await router.push({ name: "login" });
 }
 
 async function refreshConversations(): Promise<boolean> {
+  const generation = conversationGeneration;
+  const refreshToken = ++conversationRefreshSeq;
   const result = await listConversations();
+  if (
+    !conversationStateActive ||
+    generation !== conversationGeneration ||
+    refreshToken !== conversationRefreshSeq
+  ) {
+    return false;
+  }
   if (result.ok) {
     conversations.value = result.data;
     return true;
@@ -99,10 +127,15 @@ async function selectConversation(conversationId: number): Promise<void> {
   if (pending.value || conversationId === activeConversationId.value) {
     return;
   }
+  const generation = conversationGeneration;
   const switchToken = ++conversationSwitchSeq;
   conversationNotice.value = null;
   const result = await listConversationMessages(conversationId);
-  if (switchToken !== conversationSwitchSeq) {
+  if (
+    !conversationStateActive ||
+    generation !== conversationGeneration ||
+    switchToken !== conversationSwitchSeq
+  ) {
     return; // A newer selection superseded this one.
   }
   if (!result.ok) {
@@ -129,9 +162,8 @@ async function selectConversation(conversationId: number): Promise<void> {
 // message: clear local state and fall back to the safe empty view.
 async function handleConversationMissing(): Promise<void> {
   conversationNotice.value = ERROR_LABELS.NOT_FOUND;
-  activeConversationId.value = null;
-  messages.value = [];
-  nextId = 1;
+  resetConversationState();
+  conversationNotice.value = ERROR_LABELS.NOT_FOUND;
   await refreshConversations();
 }
 
@@ -139,6 +171,7 @@ async function createConversation(): Promise<void> {
   if (pending.value) {
     return;
   }
+  invalidateConversationRequests();
   conversationNotice.value = null;
   const result = await createConversationApi(authState.csrfToken, DEFAULT_CONVERSATION_TITLE);
   if (!result.ok) {
@@ -161,6 +194,7 @@ async function removeConversation(conversationId: number): Promise<void> {
   if (pending.value) {
     return;
   }
+  invalidateConversationRequests();
   conversationNotice.value = null;
   const result = await deleteConversationApi(authState.csrfToken, conversationId);
   if (result.ok === false && result.code === "AUTHENTICATION_REQUIRED") {
@@ -209,6 +243,7 @@ const passwordError = ref<string | null>(null);
 const passwordBusy = ref(false);
 
 async function doLogout(): Promise<void> {
+  resetConversationState();
   await logout();
   await router.push({ name: "login" });
 }
@@ -326,6 +361,8 @@ async function submit(rawQuestion: string, mode: AskMode = "auto"): Promise<void
 // Abort the in-flight fetch when leaving the page. Note: HTTP disconnect
 // is NOT a backend generation cancellation guarantee.
 onUnmounted(() => {
+  conversationStateActive = false;
+  invalidateConversationRequests();
   abortController?.abort();
   abortController = null;
 });

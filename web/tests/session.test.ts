@@ -64,6 +64,14 @@ function message(
   };
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
 function completedPayload(): PublicAskResponse {
   return {
     request_id: "r1",
@@ -471,5 +479,106 @@ describe("pending ask guards", () => {
 
     expect(conversationApi.listConversationMessages).not.toHaveBeenCalledWith(1);
     expect(wrapper.find(".conversation__bubble--user").text()).toBe("会话 B 的问题");
+  });
+});
+
+describe("stale conversation response fencing", () => {
+  it("does not let an older history restore replace a newly created active conversation", async () => {
+    const restoreA = deferred<{
+      ok: true;
+      data: ConversationMessagePayload[];
+    }>();
+    conversationApi.listConversations.mockResolvedValue({
+      ok: true,
+      data: [conversation(1, "会话 A")],
+    });
+    conversationApi.listConversationMessages.mockImplementation(() => restoreA.promise);
+    conversationApi.createConversation.mockResolvedValue({
+      ok: true,
+      data: conversation(2, "新对话"),
+    });
+
+    const wrapper = mountAssistant();
+    await flushPromises();
+    expect(conversationApi.listConversationMessages).toHaveBeenCalledWith(1);
+
+    await wrapper.find('[data-testid="new-conversation"]').trigger("click");
+    await flushPromises();
+    expect(items(wrapper)[0].classes()).toContain("session-sidebar__item--active");
+    expect(items(wrapper)[0].text()).toContain("新对话");
+
+    restoreA.resolve({ ok: true, data: [message(1, 1, "USER", "旧会话消息")] });
+    await flushPromises();
+
+    expect(items(wrapper)[0].classes()).toContain("session-sidebar__item--active");
+    expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("旧会话消息");
+  });
+
+  it("does not let an older refresh restore a deleted conversation row", async () => {
+    const staleList = deferred<{ ok: true; data: ConversationPayload[] }>();
+    conversationApi.listConversations
+      .mockResolvedValueOnce({ ok: true, data: [conversation(1, "会话 A")] })
+      .mockImplementationOnce(() => staleList.promise);
+    conversationApi.listConversationMessages.mockResolvedValue({ ok: true, data: [] });
+    conversationApi.deleteConversation.mockResolvedValue({ ok: true, data: null });
+    mockHappyAsk();
+
+    const wrapper = mountAssistant();
+    await flushPromises();
+    await typeAndSubmit(wrapper, "触发刷新");
+    await flushPromises();
+    expect(conversationApi.listConversations).toHaveBeenCalledTimes(2);
+
+    await deleteRow(wrapper, 0);
+    expect(items(wrapper)).toHaveLength(0);
+
+    staleList.resolve({ ok: true, data: [conversation(1, "会话 A")] });
+    await flushPromises();
+    expect(items(wrapper)).toHaveLength(0);
+  });
+
+  it("keeps the newer selection when an older restore finishes last", async () => {
+    const restoreA = deferred<{
+      ok: true;
+      data: ConversationMessagePayload[];
+    }>();
+    conversationApi.listConversations.mockResolvedValue({
+      ok: true,
+      data: [conversation(3, "会话 C"), conversation(2, "会话 B"), conversation(1, "会话 A")],
+    });
+    conversationApi.listConversationMessages.mockImplementation((id: number) => {
+      if (id === 1) {
+        return restoreA.promise;
+      }
+      return Promise.resolve({ ok: true, data: [message(id, id, "USER", `会话 ${id}`)] });
+    });
+
+    const wrapper = mountAssistant();
+    await flushPromises();
+    await items(wrapper)[2].trigger("click");
+    await items(wrapper)[1].trigger("click");
+    await flushPromises();
+
+    expect(items(wrapper)[1].classes()).toContain("session-sidebar__item--active");
+    expect(wrapper.text()).toContain("会话 2");
+
+    restoreA.resolve({ ok: true, data: [message(1, 1, "USER", "过期的会话 A")] });
+    await flushPromises();
+    expect(items(wrapper)[1].classes()).toContain("session-sidebar__item--active");
+    expect(wrapper.text()).toContain("会话 2");
+    expect(wrapper.text()).not.toContain("过期的会话 A");
+  });
+
+  it("ignores pending list results after unmount", async () => {
+    const staleList = deferred<{ ok: true; data: ConversationPayload[] }>();
+    conversationApi.listConversations.mockImplementation(() => staleList.promise);
+
+    const wrapper = mountAssistant();
+    wrapper.unmount();
+    staleList.resolve({ ok: true, data: [conversation(1, "不应恢复")] });
+    await flushPromises();
+
+    expect(conversationApi.listConversationMessages).not.toHaveBeenCalled();
   });
 });
