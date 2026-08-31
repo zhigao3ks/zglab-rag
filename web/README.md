@@ -1,62 +1,79 @@
-# ZGLab Assistant Web（Phase 9C → Phase 11）
+# ZGLab Assistant Web
 
-面向访客的 ZGLab Personal Knowledge Assistant Web UI。Phase 11 起升级为
-Public Landing + Login + Activation + Authenticated Assistant。
+`web/` 是 `ask.zglab.fun` 的 Vue 3 前端。
+
+当前产品形态：
+
+```text
+Public Landing
++ Login / Activation
++ Authenticated Assistant
++ Auto / Personal / Web / Agent modes
++ SSE status updates
+```
+
+Phase 14 已完成 Agent 产品接入并生产封板；当前前端最高优先级是非编号 UX Track，不是 Phase 15 Session Memory。
 
 ## 技术栈
 
-- Vue 3（Composition API）+ Vue Router + Vite + TypeScript
-- 原生 / scoped CSS（无 UI 框架、无 Tailwind、无 Pinia）
+- Vue 3（Composition API）
+- Vue Router
+- Vite
+- TypeScript
+- 原生 / scoped CSS
 - Vitest + Vue Test Utils（jsdom）
+
+无 Tailwind、无 Pinia、无 UI framework。
 
 ## 开发启动
 
-前置：后端 API 在 `127.0.0.1:8000` 运行（见仓库根 README）。
+前置：后端 API 在 `127.0.0.1:8000` 运行。
 
 ```bash
 cd web
 npm install
-npm run dev        # http://localhost:5173，/api 经 Vite proxy 转发到 8000
+npm run dev
 ```
 
-其他命令：
+Vite 开发服务器默认：
+
+```text
+http://localhost:5173
+/api → http://127.0.0.1:8000
+```
+
+测试与构建：
 
 ```bash
-npm run test:run   # Vitest 单测（不连真实后端）
-npm run build      # vue-tsc 类型检查 + 生产构建（dist/，已 gitignore）
+npm run test:run
+npm run build
 ```
 
-## 配置
-
-- `VITE_API_BASE_URL`：API base，默认空字符串（same-origin）。本地开发依赖
-  Vite dev proxy（`/api → http://127.0.0.1:8000`）；Phase 10 生产为 Nginx
-  同源部署。不要把 localhost 地址写进业务代码。见 `.env.example`。
-
-## 目录
+## 当前目录
 
 ```text
 web/
 ├── index.html
-├── vite.config.ts          # dev proxy（SSE 流式透传）+ Vitest 配置
+├── vite.config.ts
 ├── tsconfig.json
-├── .env.example
 ├── src/
 │   ├── main.ts
-│   ├── App.vue             # 会话恢复（GET /auth/me）+ <router-view>
-│   ├── router.ts           # 路由与 UX 守卫（真正授权在后端）
+│   ├── App.vue
+│   ├── router.ts
 │   ├── auth/
-│   │   ├── api.ts          # /api/v2/auth REST client（same-origin + CSRF 头）
-│   │   └── store.ts        # 内存态 auth 状态（不落 localStorage）
+│   │   ├── api.ts
+│   │   └── store.ts
 │   ├── api/
-│   │   ├── contracts.ts    # 与后端窄契约对应的 TS 类型 + 文案映射
-│   │   ├── client.ts       # fetch + ReadableStream SSE client（/api/v2）
-│   │   └── sse.ts          # 增量 SSE parser（跨 chunk 重组、heartbeat 忽略）
+│   │   ├── contracts.ts
+│   │   ├── client.ts
+│   │   └── sse.ts
 │   ├── views/
-│   │   ├── LandingView.vue     # 公开落地页（匿名）
+│   │   ├── LandingView.vue
 │   │   ├── LoginView.vue
-│   │   ├── ActivateView.vue    # /activate#token=... 设置密码（fragment transport）
-│   │   └── AssistantView.vue   # 认证后助手（含退出/改密）
-│   ├── conversation/types.ts   # 会话 view-model 类型
+│   │   ├── ActivateView.vue
+│   │   └── AssistantView.vue
+│   ├── conversation/
+│   │   └── types.ts
 │   ├── components/
 │   │   ├── AssistantHeader.vue
 │   │   ├── ConversationView.vue
@@ -64,48 +81,186 @@ web/
 │   │   ├── AnswerCard.vue
 │   │   ├── SourceList.vue
 │   │   └── StatusIndicator.vue
-│   └── styles/main.css     # CSS variables（颜色/间距/圆角）
-└── tests/                  # sse / client / app / components / auth 测试
+│   └── styles/
+│       └── main.css
+└── tests/
+    ├── app.test.ts
+    ├── auth.test.ts
+    ├── client.test.ts
+    ├── components.test.ts
+    └── sse.test.ts
 ```
 
-## 认证（Phase 11）
+## Authentication
 
-- 会话凭证是 HttpOnly Cookie（`__Host-zglab_session`），JS 永远读不到；
-  前端用 `credentials: "same-origin"` 自动携带。
-- CSRF token 由 `/api/v2/auth/login` / `/api/v2/auth/me` 下发，保存在内存
-  store，随 state-changing 请求以 `X-CSRF-Token` 头发送；**不存
-  localStorage**。
-- 路由守卫只负责 UX；任何能力调用都以后端 AuthN/AuthZ 为准。
-- 刷新页面后通过 `GET /api/v2/auth/me` 恢复登录态。
+- Session credential 是 HttpOnly Cookie，前端 JS 不读取 session token；
+- 请求通过 `credentials: "same-origin"` 自动携带 Cookie；
+- CSRF token 保存在内存 auth store，不写 localStorage；
+- 刷新后通过 `GET /api/v2/auth/me` 恢复状态；
+- route guard 只负责 UX，真正 AuthN/AuthZ 由后端强制；
+- 没有 public signup。
 
-## SSE client 说明
+## Ask Modes
 
-后端端点是 `POST /api/v2/ask/stream`（Phase 11；v1 已退役），浏览器
-`EventSource` 仅支持 GET，因此
-客户端使用 `fetch + ReadableStream + TextDecoder` 加自实现的增量 SSE parser：
+Composer 当前支持：
 
-- parser 维护跨 chunk 行缓冲，事件可在任意字节边界被拆分；
-- `event:` / `data:` / SSE comment（`: keep-alive` heartbeat，被忽略）；
-- data 一律 `JSON.parse`，禁止 `eval`；解析失败转为受控前端错误，
-  不把 raw payload 渲染到 DOM。
+```text
+auto
+personal
+web
+agent
+```
 
-## 安全边界
+这些只表示产品 mode，不代表客户端拥有 capability 授权。
+服务器会重新执行 policy、quota、concurrency 与 kill switch 校验。
 
-- 所有渲染使用 Vue text binding，**不使用 v-html**：LLM 回答中的 HTML
-  不会成为 XSS；回答按 `white-space: pre-wrap` 纯文本展示。
-- 每次提问是独立请求：历史消息只存在于页面内存，不随请求发送、不写
-  localStorage、无 Conversation Memory。
-- 错误展示只使用前端映射文案 + request_id，不显示 stack trace、异常名
-  或服务器原始响应体。
-- 请求中禁止提交时重复发送（后端 production baseline concurrency=1）。
-- AbortController 仅用于组件卸载时断开 fetch；HTTP disconnect 不等于
-  后端 generation 取消（Phase 9B 冻结语义）。
+## SSE Client
 
-## 契约稳定性
+后端使用 `POST /api/v2/ask/stream`，因此前端采用：
 
-Phase 9D 全系统产品验收通过后，后端 Public API v1（端点、status、错误码、
-SSE stages）曾冻结；Phase 11 引入认证后的 `/api/v2`，v1 通过
-`ZGLAB_RAG_API_V1_RETIRED` 退役（410）。v2 的 SSE stages / status / 错误
-信封与 v1 保持一致，仅新增安全错误码（见仓库根 `docs/api-v2.md`）。验收记录见
-仓库根 `docs/evaluations/phase-9-product-acceptance.md` 与
-`docs/evaluations/phase-11-authentication-acceptance.md`。
+```text
+fetch
++ ReadableStream
++ TextDecoder
++ incremental SSE parser
+```
+
+而不是浏览器 `EventSource`。
+
+Personal stages：
+
+```text
+accepted → retrieving → generating → validating → completed
+```
+
+Web stages：
+
+```text
+accepted → researching → generating → validating → completed
+```
+
+Agent stages：
+
+```text
+accepted → planning → executing → synthesizing → validating → completed
+```
+
+前端只渲染公开 stage；Agent plan、observation、tool raw data、网页正文与内部推理不会通过 SSE 下发。
+
+## 当前 Conversation 语义
+
+当前页面中的 `messages` 只是本地 view-model：
+
+- 历史消息只存在当前页面内存；
+- 下一次请求只发送当前 question + mode；
+- 不发送历史消息；
+- 不写 localStorage；
+- 不存在 conversation_id；
+- 不存在后端 Conversation / Message persistence；
+- 不存在 Session Memory。
+
+这些属于 Phase 15，当前 UX Track 不得提前实现。
+
+## 当前布局现状
+
+现有 `AssistantView.vue` 是纵向页面：
+
+```text
+account bar
+password form（optional）
+AssistantHeader
+app-main
+  ├── ConversationView
+  └── QuestionComposer
+footer
+```
+
+当前主要 UX 问题：
+
+- document 承担长会话滚动；
+- message list 不是独立 scroll container；
+- Composer 会随消息向页面底部移动；
+- completed 后不会自动定位最新消息；
+- SSE 没有 near-bottom smart follow；
+- 用户主动上翻时没有 detached 状态；
+- 没有“回到最新消息”；
+- Header / Navigation / Composer 的 narrow viewport 适配不足；
+- 当前单 column shell 不利于未来 Session Sidebar。
+
+## UX Track 目标
+
+目标结构：
+
+```text
+Assistant Layout
+├── future Session Sidebar slot
+└── Workspace
+    ├── Header / Navigation
+    └── Chat Area
+        ├── independent Message Scroll Area
+        └── Composer Dock
+```
+
+建议滚动逻辑采用：
+
+```text
+FOLLOWING
+↕
+DETACHED
+```
+
+- send：主动恢复 FOLLOWING 并定位最新；
+- near bottom：SSE / completed 自动跟随；
+- user scrolls up：进入 DETACHED；
+- DETACHED：新 stage / completed 不强制改变 scrollTop；
+- 提供“回到最新消息”；
+- 手动或按钮回到底部后恢复 FOLLOWING。
+
+本 Track 只处理前端布局与交互，不改变 API / SSE / Agent / RAG / Auth / Web / MCP 语义。
+
+## 安全渲染
+
+- LLM answer 使用 Vue text binding，不使用 `v-html`；
+- Web source title 同样按文本转义；
+- 外链只使用服务端 provenance 返回的 http/https URL；
+- external link 使用 `target="_blank"` + `rel="noopener noreferrer"`；
+- 错误只显示前端安全映射文案与 request_id；
+- AbortController 在页面卸载时断开浏览器 fetch，但 HTTP disconnect 不等于后端 generation cancellation。
+
+## 当前测试覆盖
+
+现有测试已覆盖：
+
+- empty state / example prompts；
+- composer validation；
+- Enter / Shift+Enter；
+- mode selection；
+- SSE stage / completed / error；
+- insufficient evidence；
+- duplicate submit；
+- local multi-turn rendering；
+- history not sent to backend；
+- unmount abort；
+- auth flows；
+- SSE parser；
+- XSS-safe text rendering；
+- safe Web source links。
+
+UX Track 应新增 scroll state machine 与 jump-to-latest 行为测试。
+
+jsdom 适合验证逻辑状态；真实 CSS viewport / responsive geometry 应在浏览器 smoke 中验证。
+
+## Roadmap
+
+当前顺序：
+
+```text
+UX Track   Frontend / Product Experience Stabilization   ← NOW
+Phase 15   Conversation & Session Memory
+Phase 16   Retrieval Intelligence & Knowledge Graph
+Phase 17   Agent Analyst
+Phase 18   Advanced Agent Autonomy / Bounded ReAct
+Phase 19   Owner Agent / Advanced Permissions
+```
+
+权威定义见仓库根目录 `docs/roadmap-v2.md`。
