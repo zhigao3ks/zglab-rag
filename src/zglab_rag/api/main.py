@@ -31,7 +31,7 @@ import asyncio
 import logging
 import queue
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from contextlib import asynccontextmanager, contextmanager
@@ -58,6 +58,9 @@ from zglab_rag.api.contracts import (
     AuthResultResponse,
     AuthSessionResponse,
     AuthUserPublic,
+    ConversationMessagePublic,
+    ConversationPublic,
+    ConversationTitleRequest,
     PublicAskRequest,
     PublicAskResponse,
     PublicErrorCode,
@@ -100,6 +103,9 @@ from zglab_rag.capabilities.contracts import (
 from zglab_rag.capabilities.errors import CapabilityTechnicalError
 from zglab_rag.capabilities.selection import AskMode, CapabilitySelection, select_capability
 from zglab_rag.config import Settings, get_settings
+from zglab_rag.conversation.database import ConversationDatabase
+from zglab_rag.conversation.models import Conversation, Message, MessageRole
+from zglab_rag.conversation.repositories import ConversationRepository, MessageRepository
 from zglab_rag.generation.contracts import (
     GenerationResult,
     GenerationStatus,
@@ -193,6 +199,10 @@ def create_app(
                 # cost-bearing capability, so an unavailable auth.db means
                 # the service is not ready.
                 app.state.auth_runtime.verify_ready()
+                # Conversation persistence has its own SQLite lifecycle and
+                # must fail fast independently of auth/index availability.
+                conversation_connection = app.state.conversation_database.connect(initialize=True)
+                conversation_connection.close()
             app.state.ready = True
             logger.info("runtime_ready startup_ms=%.3f", (perf_counter() - started) * 1000)
         except Exception:
@@ -219,7 +229,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=settings.api_cors_origins,
         allow_credentials=False,  # Never combine wildcard origins with credentials
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -227,6 +237,9 @@ def create_app(
     app.state.settings = settings
     app.state.runtime = runtime
     app.state.auth_runtime = auth_runtime or AuthRuntime.from_settings(settings)
+    # Phase 15A2: independent lifecycle from auth.db and knowledge.db.
+    # It is used only for owner-scoped persistence, never generation context.
+    app.state.conversation_database = ConversationDatabase(settings.conversation_database_path)
     app.state.concurrency_guard = concurrency_guard or ConcurrencyGuard(
         max_concurrent=settings.api_max_concurrent_requests
     )
@@ -276,7 +289,9 @@ def create_app(
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
         # Only apply to the cost-bearing / credential-carrying endpoints
-        if request.method == "POST" and request.url.path in (
+        if request.method in ("POST", "PATCH") and (
+            request.url.path.startswith("/api/v2/conversations")
+            or request.url.path in (
             "/api/v1/ask",
             "/api/v1/ask/stream",
             "/api/v2/ask",
@@ -285,6 +300,7 @@ def create_app(
             "/api/v2/auth/activate",
             "/api/v2/auth/reset-password",
             "/api/v2/auth/change-password",
+            )
         ):
             content_length = request.headers.get("content-length")
             if content_length and int(content_length) > settings.api_max_request_body_bytes:
@@ -754,6 +770,273 @@ def create_app(
             )
         return AuthResultResponse(request_id=request_id, result="password_changed")
 
+    # ------------------------------------------------------------------
+    # Phase 15A2: authenticated Conversation API
+    # ------------------------------------------------------------------
+
+    def _conversation_public(conversation: Conversation) -> ConversationPublic:
+        return ConversationPublic(
+            id=conversation.id,
+            title=conversation.title,
+            created_at=conversation.created_at.isoformat(),
+            updated_at=conversation.updated_at.isoformat(),
+        )
+
+    def _message_public(message: Message) -> ConversationMessagePublic:
+        return ConversationMessagePublic(
+            id=message.id,
+            conversation_id=message.conversation_id,
+            role=message.role.value,
+            content=message.content,
+            created_at=message.created_at.isoformat(),
+        )
+
+    def _conversation_for_owner(owner_user_id: int, conversation_id: int) -> Conversation | None:
+        database: ConversationDatabase = app.state.conversation_database
+        connection = database.connect(initialize=True)
+        try:
+            return ConversationRepository(connection).get(
+                owner_user_id=owner_user_id, conversation_id=conversation_id
+            )
+        finally:
+            connection.close()
+
+    def _append_conversation_message(
+        owner_user_id: int,
+        conversation_id: int,
+        role: MessageRole,
+        content: str,
+    ) -> Message | None:
+        database: ConversationDatabase = app.state.conversation_database
+        connection = database.connect(initialize=True)
+        try:
+            return MessageRepository(connection).append(
+                owner_user_id=owner_user_id,
+                conversation_id=conversation_id,
+                role=role,
+                content=content,
+            )
+        finally:
+            connection.close()
+
+    def _conversation_not_found(request_id: str) -> JSONResponse:
+        # Owner mismatch and nonexistent IDs intentionally share this exact
+        # public response, so conversation IDs cannot be enumerated.
+        return _error_response(
+            request_id,
+            PublicErrorCode.NOT_FOUND,
+            "Conversation not found",
+            status_code=404,
+        )
+
+    def _v2_read_security_gate(cookie_token: str | None) -> AuthenticatedPrincipal:
+        auth_runtime: AuthRuntime = app.state.auth_runtime
+        with auth_runtime.connection() as connection:
+            service = auth_runtime.session_service(connection, settings)
+            principal, _session = service.resolve_session(cookie_token)
+        return principal
+
+    async def _conversation_read_principal(
+        request: Request,
+    ) -> AuthenticatedPrincipal | JSONResponse:
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        try:
+            return await asyncio.to_thread(_v2_read_security_gate, _auth_cookie_token(request))
+        except SessionError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.AUTHENTICATION_REQUIRED,
+                "Authentication required",
+                status_code=401,
+            )
+
+    async def _conversation_write_principal(
+        request: Request,
+    ) -> AuthenticatedPrincipal | JSONResponse:
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        try:
+            verify_state_change_origin(request, settings)
+        except OriginError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "Request origin rejected",
+                status_code=403,
+            )
+        try:
+            return await asyncio.to_thread(
+                _v2_security_gate,
+                _auth_cookie_token(request),
+                request.headers.get("x-csrf-token"),
+            )
+        except SessionError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.AUTHENTICATION_REQUIRED,
+                "Authentication required",
+                status_code=401,
+            )
+        except CsrfError:
+            return _error_response(
+                request_id,
+                PublicErrorCode.CSRF_REJECTED,
+                "CSRF validation failed",
+                status_code=403,
+            )
+
+    async def _validate_conversation_binding(
+        principal: AuthenticatedPrincipal,
+        conversation_id: int | None,
+        request_id: str,
+    ) -> JSONResponse | None:
+        if conversation_id is None:
+            return None
+        conversation = await asyncio.to_thread(
+            _conversation_for_owner, principal.user_id, conversation_id
+        )
+        if conversation is None:
+            return _conversation_not_found(request_id)
+        return None
+
+    def _persist_assistant_answer(
+        principal: AuthenticatedPrincipal,
+        conversation_id: int,
+        response: PublicAskResponse,
+    ) -> None:
+        persisted = _append_conversation_message(
+            principal.user_id,
+            conversation_id,
+            MessageRole.ASSISTANT,
+            response.answer,
+        )
+        if persisted is None:
+            # A separate owner session may delete the conversation while an
+            # admitted generation is running. Never recreate or disclose it.
+            logger.info("conversation_deleted_before_assistant_persist")
+
+    @app.post("/api/v2/conversations", response_model=ConversationPublic, status_code=201)
+    async def create_conversation(request: Request, body: ConversationTitleRequest):
+        principal = await _conversation_write_principal(request)
+        if isinstance(principal, JSONResponse):
+            return principal
+
+        def _create() -> Conversation:
+            database: ConversationDatabase = app.state.conversation_database
+            connection = database.connect(initialize=True)
+            try:
+                return ConversationRepository(connection).create(
+                    owner_user_id=principal.user_id, title=body.title
+                )
+            finally:
+                connection.close()
+
+        return _conversation_public(await asyncio.to_thread(_create))
+
+    @app.get("/api/v2/conversations", response_model=list[ConversationPublic])
+    async def list_conversations(request: Request):
+        principal = await _conversation_read_principal(request)
+        if isinstance(principal, JSONResponse):
+            return principal
+
+        def _list() -> list[Conversation]:
+            database: ConversationDatabase = app.state.conversation_database
+            connection = database.connect(initialize=True)
+            try:
+                return ConversationRepository(connection).list(owner_user_id=principal.user_id)
+            finally:
+                connection.close()
+
+        conversations = await asyncio.to_thread(_list)
+        return [_conversation_public(conversation) for conversation in conversations]
+
+    @app.get("/api/v2/conversations/{conversation_id}", response_model=ConversationPublic)
+    async def get_conversation(request: Request, conversation_id: int):
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        principal = await _conversation_read_principal(request)
+        if isinstance(principal, JSONResponse):
+            return principal
+        conversation = await asyncio.to_thread(
+            _conversation_for_owner, principal.user_id, conversation_id
+        )
+        if conversation is None:
+            return _conversation_not_found(request_id)
+        return _conversation_public(conversation)
+
+    @app.patch("/api/v2/conversations/{conversation_id}", response_model=ConversationPublic)
+    async def update_conversation(
+        request: Request, conversation_id: int, body: ConversationTitleRequest
+    ):
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        principal = await _conversation_write_principal(request)
+        if isinstance(principal, JSONResponse):
+            return principal
+
+        def _update() -> Conversation | None:
+            database: ConversationDatabase = app.state.conversation_database
+            connection = database.connect(initialize=True)
+            try:
+                return ConversationRepository(connection).update_title(
+                    owner_user_id=principal.user_id,
+                    conversation_id=conversation_id,
+                    title=body.title,
+                )
+            finally:
+                connection.close()
+
+        conversation = await asyncio.to_thread(_update)
+        if conversation is None:
+            return _conversation_not_found(request_id)
+        return _conversation_public(conversation)
+
+    @app.delete("/api/v2/conversations/{conversation_id}", status_code=204)
+    async def delete_conversation(request: Request, conversation_id: int) -> Response:
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        principal = await _conversation_write_principal(request)
+        if isinstance(principal, JSONResponse):
+            return principal
+
+        def _delete() -> bool:
+            database: ConversationDatabase = app.state.conversation_database
+            connection = database.connect(initialize=True)
+            try:
+                return ConversationRepository(connection).delete(
+                    owner_user_id=principal.user_id, conversation_id=conversation_id
+                )
+            finally:
+                connection.close()
+
+        if not await asyncio.to_thread(_delete):
+            return _conversation_not_found(request_id)
+        return Response(status_code=204)
+
+    @app.get(
+        "/api/v2/conversations/{conversation_id}/messages",
+        response_model=list[ConversationMessagePublic],
+    )
+    async def list_conversation_messages(request: Request, conversation_id: int):
+        request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+        principal = await _conversation_read_principal(request)
+        if isinstance(principal, JSONResponse):
+            return principal
+        conversation = await asyncio.to_thread(
+            _conversation_for_owner, principal.user_id, conversation_id
+        )
+        if conversation is None:
+            return _conversation_not_found(request_id)
+
+        def _list_messages() -> list[Message]:
+            database: ConversationDatabase = app.state.conversation_database
+            connection = database.connect(initialize=True)
+            try:
+                return MessageRepository(connection).list_for_conversation(
+                    owner_user_id=principal.user_id, conversation_id=conversation_id
+                )
+            finally:
+                connection.close()
+
+        messages = await asyncio.to_thread(_list_messages)
+        return [_message_public(message) for message in messages]
+
     def _v2_security_gate(
         cookie_token: str | None,
         csrf_header: str | None,
@@ -978,6 +1261,11 @@ def create_app(
         length_error = _question_length_error(question, settings, request_id)
         if length_error is not None:
             return length_error
+        binding_error = await _validate_conversation_binding(
+            principal, body.conversation_id, request_id
+        )
+        if binding_error is not None:
+            return binding_error
 
         is_agent = body.mode == AskMode.AGENT.value
         if is_agent:
@@ -1049,6 +1337,20 @@ def create_app(
         )
         if quota_error is not None:
             return quota_error
+
+        if body.conversation_id is not None:
+            persisted = await asyncio.to_thread(
+                _append_conversation_message,
+                principal.user_id,
+                body.conversation_id,
+                MessageRole.USER,
+                question,
+            )
+            if persisted is None:
+                _refund_v2_quota(principal, web=is_web, agent=is_agent)
+                for held in held_guards:
+                    held.release()
+                return _conversation_not_found(request_id)
 
         executor: ThreadPoolExecutor = app.state.executor
         execute_fn = (
@@ -1078,7 +1380,21 @@ def create_app(
         future.add_done_callback(lambda _future: guard.release())
         for held in held_guards[1:]:
             future.add_done_callback(lambda _future, _guard=held: _guard.release())
-        return _collect_generation(settings, future, request_id)
+        response = _collect_generation(settings, future, request_id)
+        if isinstance(response, PublicAskResponse) and body.conversation_id is not None:
+            try:
+                await asyncio.to_thread(
+                    _persist_assistant_answer, principal, body.conversation_id, response
+                )
+            except Exception:
+                logger.error("conversation_assistant_persist_failed")
+                return _error_response(
+                    request_id,
+                    PublicErrorCode.INTERNAL_ERROR,
+                    "An unexpected error occurred",
+                    status_code=500,
+                )
+        return response
 
     @app.post("/api/v2/ask/stream")
     async def ask_stream_v2(request: Request, body: PublicAskRequest) -> Response:
@@ -1101,6 +1417,11 @@ def create_app(
         length_error = _question_length_error(question, settings, request_id)
         if length_error is not None:
             return length_error
+        binding_error = await _validate_conversation_binding(
+            principal, body.conversation_id, request_id
+        )
+        if binding_error is not None:
+            return binding_error
 
         is_agent = body.mode == AskMode.AGENT.value
         if is_agent:
@@ -1173,6 +1494,20 @@ def create_app(
         if quota_error is not None:
             return quota_error
 
+        if body.conversation_id is not None:
+            persisted = await asyncio.to_thread(
+                _append_conversation_message,
+                principal.user_id,
+                body.conversation_id,
+                MessageRole.USER,
+                question,
+            )
+            if persisted is None:
+                _refund_v2_quota(principal, web=is_web, agent=is_agent)
+                for held in held_guards:
+                    held.release()
+                return _conversation_not_found(request_id)
+
         def _refund_quota() -> None:
             _refund_v2_quota(principal, web=is_web, agent=is_agent)
 
@@ -1188,6 +1523,13 @@ def create_app(
             if is_agent
             else (_execute_web_generation if is_web else _execute_generation),
             extra_done_guards=held_guards[1:],
+            on_business_result=(
+                lambda response: _persist_assistant_answer(
+                    principal, body.conversation_id, response
+                )
+                if body.conversation_id is not None
+                else None
+            ),
         )
 
     def _refund_v2_quota(
@@ -1495,6 +1837,7 @@ async def _open_ask_stream(
     principal: AuthenticatedPrincipal | None = None,
     execute: callable = None,
     extra_done_guards: list[ConcurrencyGuard] | None = None,
+    on_business_result: Callable[[PublicAskResponse], None] | None = None,
 ) -> Response:
     """Submit generation and open the status SSE stream.
 
@@ -1561,7 +1904,15 @@ async def _open_ask_stream(
     future.add_done_callback(_on_done)
 
     return StreamingResponse(
-        _stream_events(request, future, bridge, done_sentinel, request_id, settings),
+        _stream_events(
+            request,
+            future,
+            bridge,
+            done_sentinel,
+            request_id,
+            settings,
+            on_business_result=on_business_result,
+        ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )
@@ -1574,6 +1925,8 @@ async def _stream_events(
     done_sentinel: object,
     request_id: str,
     settings: Settings,
+    *,
+    on_business_result: Callable[[PublicAskResponse], None] | None = None,
 ) -> AsyncIterator[str]:
     """Yield public SSE events for one generation request.
 
@@ -1668,6 +2021,8 @@ async def _stream_events(
 
     try:
         completed = _map_result_to_response(future.result(), request_id)
+        if on_business_result is not None:
+            on_business_result(completed)
     except ProviderFailure:
         logger.warning("request_id=%s error_code=PROVIDER_UNAVAILABLE", request_id)
         yield _sse_error_event(

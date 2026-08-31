@@ -41,6 +41,7 @@ def build_app(tmp_path: Path, **overrides):
     """Build an app with a real auth runtime and a fake generation runtime."""
     defaults = dict(
         auth_database_path=tmp_path / "auth.db",
+        conversation_database_path=tmp_path / "conversation.db",
         # Local HTTP test transport cannot carry Secure cookies; the
         # dev/test combination must use a plain (non-__Host-) cookie name,
         # exactly like local HTTP development.

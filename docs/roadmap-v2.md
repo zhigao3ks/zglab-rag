@@ -234,6 +234,10 @@ no retry / no replan / no infinite ReAct
 
 已完成独立 `conversation.db` 的 schema v1、framework-free Conversation / Message domain，以及 owner-scoped repository。该基础层尚未接入 API、SSE、前端、ask request 或 multi-turn context；15A 与整个 Phase 15 仍未完成。
 
+#### 15A2 — Authenticated Conversation API + Ask Persistence ✅ COMPLETE
+
+已完成 owner-scoped authenticated Conversation API，以及 `/api/v2/ask` / `/api/v2/ask/stream` 的可选 `conversation_id` 持久化。历史消息仍不进入 retrieval、prompt、capability 或 Agent context；15A 与整个 Phase 15 仍未完成。
+
 建立明确的 Conversation / Message lifecycle：
 
 ```text

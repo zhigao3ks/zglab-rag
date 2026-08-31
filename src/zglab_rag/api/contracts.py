@@ -11,7 +11,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PublicStatus(StrEnum):
@@ -43,6 +43,7 @@ class PublicErrorCode(StrEnum):
     # request, or the account lacks the web-research permission.
     CAPABILITY_DISABLED = "CAPABILITY_DISABLED"
     CAPABILITY_DENIED = "CAPABILITY_DENIED"
+    NOT_FOUND = "NOT_FOUND"
 
 
 class PublicAskRequest(BaseModel):
@@ -58,6 +59,9 @@ class PublicAskRequest(BaseModel):
 
     question: str = Field(min_length=1)
     mode: Literal["auto", "personal", "web", "agent"] = "auto"
+    # Phase 15A2: persistence binding only. History is deliberately never
+    # loaded into retrieval, prompt assembly, or Agent execution here.
+    conversation_id: int | None = Field(default=None, gt=0)
 
 
 class PublicSource(BaseModel):
@@ -213,3 +217,39 @@ class AuthResultResponse(BaseModel):
         "password_updated",
         "password_changed",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 15A2: authenticated conversation API contracts
+# ---------------------------------------------------------------------------
+
+
+class ConversationTitleRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    title: str = Field(min_length=1, max_length=120)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("title must not be blank")
+        if len(normalized) > 120:
+            raise ValueError("title is too long")
+        return normalized
+
+
+class ConversationPublic(BaseModel):
+    id: int
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class ConversationMessagePublic(BaseModel):
+    id: int
+    conversation_id: int
+    role: Literal["USER", "ASSISTANT"]
+    content: str
+    created_at: str
