@@ -76,6 +76,10 @@ class Settings(BaseSettings):
 
     # Phase 11 Authentication & Access Control
     auth_database_path: Path = Path("runtime/auth.db")
+
+    # Phase 15A1 storage foundation. This path is intentionally not wired
+    # into API/runtime behavior until a later explicitly authorized slice.
+    conversation_database_path: Path = Path("runtime/conversation.db")
     # Public origin used to build activation URLs in CLI output and to
     # validate Origin/Referer headers; set to https://ask.zglab.fun in prod.
     auth_public_base_url: str = "http://localhost:8000"

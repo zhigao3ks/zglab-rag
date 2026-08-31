@@ -230,6 +230,10 @@ no retry / no replan / no infinite ReAct
 
 ### 15A — Conversation Persistence
 
+#### 15A1 — Conversation Domain & Persistence Foundation ✅ COMPLETE
+
+已完成独立 `conversation.db` 的 schema v1、framework-free Conversation / Message domain，以及 owner-scoped repository。该基础层尚未接入 API、SSE、前端、ask request 或 multi-turn context；15A 与整个 Phase 15 仍未完成。
+
 建立明确的 Conversation / Message lifecycle：
 
 ```text
