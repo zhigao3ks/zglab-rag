@@ -62,6 +62,17 @@ function mockPending() {
   );
 }
 
+function setScrollerMetrics(
+  element: HTMLElement,
+  { scrollHeight, clientHeight, scrollTop }: Record<string, number>,
+): void {
+  Object.defineProperties(element, {
+    scrollHeight: { configurable: true, value: scrollHeight },
+    clientHeight: { configurable: true, value: clientHeight },
+    scrollTop: { configurable: true, writable: true, value: scrollTop },
+  });
+}
+
 async function typeAndSubmit(wrapper: ReturnType<typeof mount>, question: string) {
   await wrapper.find('[data-testid="question-input"]').setValue(question);
   await wrapper.find('[data-testid="question-input"]').trigger("keydown", { key: "Enter" });
@@ -229,6 +240,98 @@ describe("state machine", () => {
     await wrapper.find('[data-testid="question-input"]').trigger("keydown", { key: "Enter" });
     await flushPromises();
     expect(askStreamMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("conversation scrolling", () => {
+  it("forces following on submit and follows stage, completed, and error updates", async () => {
+    let callbacks: AskStreamCallbacks | undefined;
+    let release: () => void = () => {};
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    askStreamMock.mockImplementation((_question: string, received: AskStreamCallbacks) => {
+      callbacks = received;
+      return hold;
+    });
+
+    const wrapper = mountAssistant();
+    const scroller = wrapper.find('[data-testid="message-scroller"]').element as HTMLElement;
+    setScrollerMetrics(scroller, { scrollHeight: 800, clientHeight: 300, scrollTop: 0 });
+
+    await typeAndSubmit(wrapper, "滚动测试？");
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(800);
+
+    setScrollerMetrics(scroller, { scrollHeight: 1000, clientHeight: 300, scrollTop: 800 });
+    callbacks?.onStage("generating", "r1");
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(1000);
+
+    setScrollerMetrics(scroller, { scrollHeight: 1200, clientHeight: 300, scrollTop: 1000 });
+    callbacks?.onCompleted(completedPayload());
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(1200);
+
+    setScrollerMetrics(scroller, { scrollHeight: 1400, clientHeight: 300, scrollTop: 1200 });
+    callbacks?.onError("RATE_LIMITED", "r1");
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(1400);
+    release();
+  });
+
+  it("does not take scroll control from a detached reader for stage, completed, or error", async () => {
+    let callbacks: AskStreamCallbacks | undefined;
+    let release: () => void = () => {};
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    askStreamMock.mockImplementation((_question: string, received: AskStreamCallbacks) => {
+      callbacks = received;
+      return hold;
+    });
+
+    const wrapper = mountAssistant();
+    const scroller = wrapper.find('[data-testid="message-scroller"]').element as HTMLElement;
+    setScrollerMetrics(scroller, { scrollHeight: 1000, clientHeight: 300, scrollTop: 100 });
+    await typeAndSubmit(wrapper, "不要抢滚动？");
+    await flushPromises();
+
+    scroller.scrollTop = 50;
+    await wrapper.find('[data-testid="message-scroller"]').trigger("scroll");
+    expect(wrapper.find('[data-testid="return-latest"]').exists()).toBe(true);
+
+    callbacks?.onStage("generating", "r1");
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(50);
+
+    callbacks?.onCompleted(completedPayload());
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(50);
+
+    callbacks?.onError("RATE_LIMITED", "r1");
+    await flushPromises();
+    expect(scroller.scrollTop).toBe(50);
+    release();
+  });
+
+  it("returns to the latest message when the detached control is clicked", async () => {
+    const wrapper = mountAssistant();
+    const messageScroller = () =>
+      wrapper.find('[data-testid="message-scroller"]').element as HTMLElement;
+    const scrollTo = vi.fn();
+
+    setScrollerMetrics(messageScroller(), { scrollHeight: 1000, clientHeight: 300, scrollTop: 0 });
+    await wrapper.find('[data-testid="message-scroller"]').trigger("scroll");
+    expect(wrapper.find('[data-testid="return-latest"]').exists()).toBe(true);
+
+    Object.defineProperty(messageScroller(), "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+    await wrapper.find('[data-testid="return-latest"]').trigger("click");
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    expect(wrapper.find('[data-testid="return-latest"]').exists()).toBe(false);
   });
 });
 

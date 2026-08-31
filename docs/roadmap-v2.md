@@ -42,7 +42,7 @@ Phase 12    Capability Foundation & Web Research           ✅ SEALED
 Phase 13    MCP Tool Runtime                               ✅ SEALED
 Phase 14    Agent Orchestrator                              ✅ SEALED
 
-UX Track     Frontend / Product Experience Stabilization   ← IMMEDIATE
+UX Track     Frontend / Product Experience Stabilization   ✅ COMPLETE
 
 Phase 15    Conversation & Session Memory                   ← NEXT PRODUCT PHASE
 Phase 16    Retrieval Intelligence & Knowledge Graph
@@ -181,7 +181,7 @@ no retry / no replan / no infinite ReAct
 
 ---
 
-## 4. UX Track — Frontend / Product Experience Stabilization ← IMMEDIATE
+## 4. UX Track — Frontend / Product Experience Stabilization ✅ COMPLETE
 
 这是 Phase 14 后**最高优先级工作**，作为非编号 Maintenance / Product UX Track 执行，不改变已封板 Phase 编号。
 
@@ -220,7 +220,7 @@ no retry / no replan / no infinite ReAct
 - desktop/mobile viewport 适配；
 - 不破坏现有 Auto / Personal / Web / Agent 功能。
 
-该 Track 完成后再正式进入 Phase 15。
+该 Track 已完成：Assistant 现为 viewport-bounded shell，消息区域独立滚动，Composer 固定在 dock，且 FOLLOWING / DETACHED 状态机不会在用户上翻时抢占滚动位置。没有实现任何 Phase 15 session 或持久化能力；下一 Product Phase 仍为 Phase 15。
 
 ---
 
@@ -615,10 +615,6 @@ docs/evaluations/phase-14-*.md
 6. 如发现文档与生产现实冲突，先报告并修正文档漂移；
 7. 不因为某项技术“更 Agentic”而跳过更高优先级的产品体验和稳定性问题。
 
-当前唯一优先执行项：
-
-> **UX Track — Frontend / Product Experience Stabilization**
-
-UX Track 完成并验收后，下一 Product Phase：
+UX Track 已完成并验收。下一 Product Phase：
 
 > **Phase 15 — Conversation & Session Memory**

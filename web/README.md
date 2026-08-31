@@ -12,7 +12,7 @@ Public Landing
 + SSE status updates
 ```
 
-Phase 14 已完成 Agent 产品接入并生产封板；当前前端最高优先级是非编号 UX Track，不是 Phase 15 Session Memory。
+Phase 14 已完成 Agent 产品接入并生产封板；UX Track 已完成。下一 Product Phase 是 Phase 15 Session Memory，但尚未开始。
 
 ## 技术栈
 
@@ -73,7 +73,8 @@ web/
 │   │   ├── ActivateView.vue
 │   │   └── AssistantView.vue
 │   ├── conversation/
-│   │   └── types.ts
+│   │   ├── types.ts
+│   │   └── useConversationScroll.ts
 │   ├── components/
 │   │   ├── AssistantHeader.vue
 │   │   ├── ConversationView.vue
@@ -88,6 +89,7 @@ web/
     ├── auth.test.ts
     ├── client.test.ts
     ├── components.test.ts
+    ├── conversation-scroll.test.ts
     └── sse.test.ts
 ```
 
@@ -161,35 +163,26 @@ accepted → planning → executing → synthesizing → validating → complete
 
 这些属于 Phase 15，当前 UX Track 不得提前实现。
 
-## 当前布局现状
+## Assistant 布局
 
-现有 `AssistantView.vue` 是纵向页面：
+`AssistantView.vue` 使用受 viewport 约束的应用 shell：
 
 ```text
 account bar
 password form（optional）
 AssistantHeader
 app-main
-  ├── ConversationView
-  └── QuestionComposer
+  ├── Chat Area
+  │   └── Message Scroller
+  └── Composer Dock
 footer
 ```
 
-当前主要 UX 问题：
+`app-shell` 固定为 `100dvh`，Header、account controls、Composer Dock 和 footer 均不参与消息滚动；只有 Message Scroller 使用 `overflow-y: auto`。窄屏时 account controls 会换行，composer controls 重排，textarea 有 viewport-relative max-height 并在内部滚动。长答案、来源和用户消息使用换行规则，避免横向溢出。
 
-- document 承担长会话滚动；
-- message list 不是独立 scroll container；
-- Composer 会随消息向页面底部移动；
-- completed 后不会自动定位最新消息；
-- SSE 没有 near-bottom smart follow；
-- 用户主动上翻时没有 detached 状态；
-- 没有“回到最新消息”；
-- Header / Navigation / Composer 的 narrow viewport 适配不足；
-- 当前单 column shell 不利于未来 Session Sidebar。
+未来的 Session Sidebar 仅保留布局演进空间，当前没有 Sidebar 数据或功能。
 
-## UX Track 目标
-
-目标结构：
+## Conversation Scroll State
 
 ```text
 Assistant Layout
@@ -201,8 +194,6 @@ Assistant Layout
         └── Composer Dock
 ```
 
-建议滚动逻辑采用：
-
 ```text
 FOLLOWING
 ↕
@@ -210,10 +201,12 @@ DETACHED
 ```
 
 - send：主动恢复 FOLLOWING 并定位最新；
-- near bottom：SSE / completed 自动跟随；
+- 初始为 `FOLLOWING`；near-bottom threshold 为 96px；
+- send：主动恢复 FOLLOWING 并在 DOM 更新后定位最新；
+- FOLLOWING：SSE stage / completed / error 更新后继续跟随；
 - user scrolls up：进入 DETACHED；
-- DETACHED：新 stage / completed 不强制改变 scrollTop；
-- 提供“回到最新消息”；
+- DETACHED：新 stage / completed / error 不强制改变 `scrollTop`；
+- 提供“回到最新消息”，点击后 smooth scroll 并恢复 FOLLOWING；
 - 手动或按钮回到底部后恢复 FOLLOWING。
 
 本 Track 只处理前端布局与交互，不改变 API / SSE / Agent / RAG / Auth / Web / MCP 语义。
@@ -246,7 +239,7 @@ DETACHED
 - XSS-safe text rendering；
 - safe Web source links。
 
-UX Track 应新增 scroll state machine 与 jump-to-latest 行为测试。
+UX Track 测试还覆盖 scroll state machine、提交自动到底、SSE follow/detach、error 的相同策略，以及 jump-to-latest。
 
 jsdom 适合验证逻辑状态；真实 CSS viewport / responsive geometry 应在浏览器 smoke 中验证。
 
@@ -255,8 +248,8 @@ jsdom 适合验证逻辑状态；真实 CSS viewport / responsive geometry 应�
 当前顺序：
 
 ```text
-UX Track   Frontend / Product Experience Stabilization   ← NOW
-Phase 15   Conversation & Session Memory
+UX Track   Frontend / Product Experience Stabilization   ✅ COMPLETE
+Phase 15   Conversation & Session Memory                 ← NEXT PRODUCT PHASE
 Phase 16   Retrieval Intelligence & Knowledge Graph
 Phase 17   Agent Analyst
 Phase 18   Advanced Agent Autonomy / Bounded ReAct

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, type ComponentPublicInstance } from "vue";
 import { useRouter } from "vue-router";
 import AssistantHeader from "../components/AssistantHeader.vue";
 import ConversationView from "../components/ConversationView.vue";
@@ -10,6 +10,7 @@ import { QUESTION_MAX_LENGTH } from "../api/contracts";
 import type { AssistantTurn, ChatMessage } from "../conversation/types";
 import { authState, clearAuth, logout } from "../auth/store";
 import { authChangePassword } from "../auth/api";
+import { useConversationScroll } from "../conversation/useConversationScroll";
 
 const router = useRouter();
 
@@ -23,6 +24,11 @@ let nextId = 1;
 let abortController: AbortController | null = null;
 
 const hasConversation = computed(() => messages.value.length > 0);
+const { scroller, isDetached, onScroll, followAfterUpdate, followNow } = useConversationScroll();
+
+function setMessageScroller(element: Element | ComponentPublicInstance | null): void {
+  scroller.value = element instanceof HTMLElement ? element : null;
+}
 
 // -- account bar (logout / change password) -------------------------------
 
@@ -77,6 +83,7 @@ function updateLastAssistantTurn(turn: AssistantTurn): void {
     const message = messages.value[index];
     if (message.role === "assistant") {
       message.turn = turn;
+      void followAfterUpdate();
       return;
     }
   }
@@ -94,6 +101,8 @@ async function submit(rawQuestion: string, mode: AskMode = "auto"): Promise<void
     role: "assistant",
     turn: { phase: "pending", stage: null },
   });
+  followNow();
+  void followAfterUpdate();
   pending.value = true;
 
   const controller = new AbortController();
@@ -204,12 +213,32 @@ onUnmounted(() => {
 
     <AssistantHeader />
     <main class="app-main">
-      <ConversationView
-        :messages="messages"
-        :has-conversation="hasConversation"
-        @example="submit"
-      />
-      <QuestionComposer :disabled="pending" @submit="submit" />
+      <div class="chat-area">
+        <div
+          :ref="setMessageScroller"
+          class="message-scroller"
+          data-testid="message-scroller"
+          @scroll="onScroll"
+        >
+          <ConversationView
+            :messages="messages"
+            :has-conversation="hasConversation"
+            @example="submit"
+          />
+        </div>
+        <button
+          v-if="isDetached"
+          type="button"
+          class="return-latest"
+          data-testid="return-latest"
+          @click="followNow(true)"
+        >
+          回到最新消息
+        </button>
+      </div>
+      <div class="composer-dock">
+        <QuestionComposer :disabled="pending" @submit="submit" />
+      </div>
     </main>
     <footer class="app-footer">
       回答基于已允许公开的知识源生成，并附带可追溯的来源。
@@ -219,13 +248,15 @@ onUnmounted(() => {
 
 <style scoped>
 .app-shell {
-  min-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--surface-page);
 }
 
 .account-bar {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -253,6 +284,7 @@ onUnmounted(() => {
 }
 
 .password-form {
+  flex: none;
   max-width: var(--content-max-width);
   width: 100%;
   margin: 0 auto;
@@ -299,18 +331,69 @@ onUnmounted(() => {
 
 .app-main {
   flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: var(--content-max-width);
   margin: 0 auto;
   padding: 0 var(--space-4);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.message-scroller {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.composer-dock {
+  flex: none;
+  background: var(--surface-page);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.return-latest {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-3);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--surface-card);
+  color: var(--accent);
+  padding: var(--space-2) var(--space-3);
+  box-shadow: 0 2px 12px rgb(28 36 48 / 15%);
+  cursor: pointer;
 }
 
 .app-footer {
+  flex: none;
   padding: var(--space-4);
   text-align: center;
   color: var(--text-muted);
   font-size: var(--font-size-small);
+}
+
+@media (max-width: 768px) {
+  .account-bar {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .account-bar__user {
+    flex-basis: 100%;
+  }
+
+  .app-footer {
+    display: none;
+  }
 }
 </style>

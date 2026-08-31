@@ -15,6 +15,7 @@
 
 <style scoped>
 .assistant-header {
+  flex: none;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-page);
 }

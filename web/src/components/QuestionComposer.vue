@@ -119,6 +119,8 @@ function onKeydown(event: KeyboardEvent): void {
   outline: none;
   resize: vertical;
   min-height: 3rem;
+  max-height: min(30dvh, 12rem);
+  overflow-y: auto;
   font: inherit;
   color: var(--text-primary);
   background: transparent;
@@ -186,5 +188,26 @@ function onKeydown(event: KeyboardEvent): void {
 .composer__send:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .composer {
+    padding-bottom: var(--space-3);
+  }
+
+  .composer__bar {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-2);
+  }
+
+  .composer__mode {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+
+  .composer__mode-select {
+    max-width: 100%;
+  }
 }
 </style>

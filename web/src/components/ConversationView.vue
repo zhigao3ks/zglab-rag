@@ -57,7 +57,7 @@ const EXAMPLE_PROMPTS = [
 
 <style scoped>
 .conversation {
-  flex: 1;
+  min-height: 100%;
   padding: var(--space-6) 0 var(--space-4);
 }
 
@@ -143,5 +143,20 @@ const EXAMPLE_PROMPTS = [
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
   color: var(--text-primary);
+}
+
+@media (max-width: 768px) {
+  .conversation {
+    padding-top: var(--space-4);
+  }
+
+  .conversation__empty {
+    margin-top: var(--space-5);
+    padding: 0 var(--space-2);
+  }
+
+  .conversation__bubble {
+    max-width: 92%;
+  }
 }
 </style>
