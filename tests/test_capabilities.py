@@ -85,7 +85,7 @@ class TestCapabilityContract:
             CapabilityRequest(question="问题", visibility="private")  # type: ignore[call-arg]
 
     def test_context_never_carries_http_state(self) -> None:
-        allowed = {"request_id", "principal"}
+        allowed = {"request_id", "principal", "conversation_context"}
         assert {field.name for field in fields(CapabilityContext)} == allowed
 
     def test_status_mapping_preserves_phase8_semantics(self) -> None:

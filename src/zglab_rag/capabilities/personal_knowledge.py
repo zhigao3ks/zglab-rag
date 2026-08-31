@@ -85,7 +85,14 @@ class PersonalKnowledgeSkill:
         try:
             with self._runtime.request_connection() as connection:
                 service = self._runtime.create_service(connection)
-                generation = service.answer(request.question, progress=progress)
+                if context.conversation_context is None:
+                    generation = service.answer(request.question, progress=progress)
+                else:
+                    generation = service.answer(
+                        request.question,
+                        progress=progress,
+                        conversation_context=context.conversation_context,
+                    )
         except Exception as exc:
             raise CapabilityTechnicalError(
                 f"personal knowledge capability failed: {exc}", original=exc

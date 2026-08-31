@@ -26,6 +26,10 @@ Agent Domain Model 保持 framework-free。
 
 `AgentRequest` 经过 Planner 产生 bounded plan；执行后得到 request-scoped `AgentObservation[]`。
 
+Phase 15B additive 增加 server-derived `conversation_context`：它只作为低信任的连续语义参考
+透传到 Personal/Web capability，不能影响 Planner 的 capability selection、冻结 plan、step
+budget 或 MCP allowlist，也绝不是 Evidence 或 ToolResult reuse。
+
 Observation 分为：
 
 ```text

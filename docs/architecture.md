@@ -108,6 +108,13 @@ Application / Agent Runtime
 - login 不等于 private knowledge 开放；
 - Auth / quota / concurrency 必须位于 Agent Runtime 外部。
 
+## 4.1 Conversation Context — Phase 15B
+
+`conversation.db` 与 auth/knowledge DB 保持独立 lifecycle。通过认证且 owner-scoped 的
+`conversation_id`，服务端在 admission 后、当前 USER message 持久化前装配有界的完整历史
+轮次，并把它作为低信任 `ConversationContext` 传给 capability。它可帮助 retrieval/search
+理解连续语义，但不是 Evidence，不能产生 citation，不能改变权限或 Agent/MCP 预算。
+
 ## 5. Capability Architecture
 
 ### PersonalKnowledgeSkill

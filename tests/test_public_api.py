@@ -52,10 +52,14 @@ class FakeAnswerService:
         self.delay = delay
         self.call_count = 0
         self.last_question: str | None = None
+        self.last_conversation_context = None
 
-    def answer(self, question: str, *, progress=None) -> GenerationResult:
+    def answer(
+        self, question: str, *, progress=None, conversation_context=None
+    ) -> GenerationResult:
         self.call_count += 1
         self.last_question = question
+        self.last_conversation_context = conversation_context
         if self.delay > 0:
             time.sleep(self.delay)
         if self.error is not None:
@@ -966,4 +970,3 @@ class TestDeadlineLayerMapping:
         response = client.post("/api/v1/ask", json={"question": "问题？"})
         assert response.status_code == 500
         assert response.json()["error"]["code"] == "INTERNAL_ERROR"
-

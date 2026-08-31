@@ -14,7 +14,7 @@ Public Landing
 + SSE status updates
 ```
 
-Phase 14 已完成 Agent 产品接入并生产封板；UX Track 已完成。Phase 15A（Conversation Persistence：domain/storage、authenticated API + ask 持久化、Session Sidebar + 历史恢复）已完成；下一子阶段是 15B Multi-turn Context，历史消息在那之前不参与任何生成上下文。
+Phase 14 已完成 Agent 产品接入并生产封板；UX Track 已完成。Phase 15A（Conversation Persistence）与 15B（bounded Multi-turn Context）已完成；下一子阶段是 15C Context Compression。历史上下文仅由服务端从同一 owner conversation 读取，且不作为 Evidence。
 
 ## 技术栈
 
@@ -154,28 +154,30 @@ accepted → planning → executing → synthesizing → validating → complete
 
 前端只渲染公开 stage；Agent plan、observation、tool raw data、网页正文与内部推理不会通过 SSE 下发。
 
-## Conversation / Session 语义（Phase 15A3）
+## Conversation / Session 语义（Phase 15B）
 
 后端 Phase 15A2 提供 owner-scoped Conversation API 与 ask 可选持久化；前端 Phase 15A3 通过 Session Sidebar 接入：
 
 - 有 active conversation 时，ask 请求 body 携带 `conversation_id`，只表示 ownership + persistence；
 - 无 active conversation 时，ask 不携带 `conversation_id`，行为与独立请求完全一致，也不会自动创建会话；
 - 切换会话时通过 `GET /api/v2/conversations/{id}/messages` 恢复历史，USER/ASSISTANT 仅映射为本地 `ChatMessage[]` 展示；
-- **历史恢复只是展示**：恢复的消息从不重新发送给 ask API，也从不进入 retrieval、prompt、capability 或 Agent context；
+- 前端仍不重新上传恢复历史；当有 `conversation_id` 时，服务端才会 owner-scoped 地读取有界的已完成历史轮次，用于连续语义理解；
 - 新建会话使用固定标题「新对话」，不使用 LLM；
 - 删除带两步确认；`NOT_FOUND` 统一回退到安全 empty state，不展示原始 server message。
 
-当前语义仍然是：
+当前语义为：
 
 ```text
-History = persisted UI history
-
-Current question only
+conversation_id + authenticated principal
+    ↓
+server-derived bounded completed turns (low trust)
+    ↓
+Current question + current retrieval / Web evidence
     ↓
 LLM / Agent
 ```
 
-Multi-turn context、summary、compression、evidence/tool reuse 属于 Phase 15B+。
+历史不是 Evidence 或 citation，不能扩大 capability/MCP 权限。summary、compression、evidence/tool reuse 仍属于 Phase 15C/15D。
 
 ## Assistant 布局
 
@@ -265,7 +267,7 @@ jsdom 适合验证逻辑状态；真实 CSS viewport / responsive geometry 应�
 
 ```text
 UX Track   Frontend / Product Experience Stabilization   ✅ COMPLETE
-Phase 15   Conversation & Session Memory                 ← IN PROGRESS (15A ✅, 15B NEXT)
+Phase 15   Conversation & Session Memory                 ← IN PROGRESS (15A/15B ✅, 15C NEXT)
 Phase 16   Retrieval Intelligence & Knowledge Graph
 Phase 17   Agent Analyst
 Phase 18   Advanced Agent Autonomy / Bounded ReAct

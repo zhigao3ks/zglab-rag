@@ -146,11 +146,16 @@ class WebResearchSkill:
         """
         notify = _safe_research_progress(progress)
         question = request.question.strip()
+        research_query = (
+            context.conversation_context.retrieval_query(question)
+            if context.conversation_context is not None
+            else question
+        )
 
         notify(ResearchProgressStage.SEARCHING)
         notify(ResearchProgressStage.FETCHING)
         notify(ResearchProgressStage.EXTRACTING)
-        research = self._service.research(question, request_id=context.request_id)
+        research = self._service.research(research_query, request_id=context.request_id)
 
         if research.status == ResearchStatus.POLICY_DISABLED:
             raise ResearchPolicyError("web research is disabled by policy")
@@ -179,7 +184,12 @@ class WebResearchSkill:
             research.evidence,
             max_items=self._generation_config.budget.max_evidence_items,
         )
-        built = build_web_context(question, evidence_items, self._generation_config.budget)
+        built = build_web_context(
+            question,
+            evidence_items,
+            self._generation_config.budget,
+            conversation_context=context.conversation_context,
+        )
 
         def generation_progress(stage: ProgressStage) -> None:
             if stage == ProgressStage.GENERATING:

@@ -87,10 +87,12 @@ class FakeWebSkill:
     def __init__(self, *, outcome: str = "answered") -> None:
         self.outcome = outcome
         self.calls: list[str] = []
+        self.contexts: list[object] = []
         self.progress_stages: list[ResearchProgressStage] = []
 
     def answer(self, request, context, *, progress=None):
         self.calls.append(request.question)
+        self.contexts.append(context.conversation_context)
 
         def notify(stage: ResearchProgressStage) -> None:
             self.progress_stages.append(stage)

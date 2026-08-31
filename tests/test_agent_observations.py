@@ -17,6 +17,8 @@ from zglab_rag.capabilities.contracts import (
     CapabilityStatus,
     EvidenceOrigin,
 )
+from zglab_rag.conversation.context import ConversationContext, ConversationContextMessage
+from zglab_rag.conversation.models import MessageRole
 from zglab_rag.mcp.contracts import MCPToolResult
 
 
@@ -29,7 +31,11 @@ def result(
 class FakePersonal:
     metadata = CapabilityMetadata("personal_knowledge", "Personal", "test")
 
-    def execute(self, *_args, **_kwargs):
+    def __init__(self) -> None:
+        self.context = None
+
+    def execute(self, _request, context, **_kwargs):
+        self.context = context.conversation_context
         return result(EvidenceOrigin.PERSONAL)
 
 
@@ -76,6 +82,19 @@ def test_tool_observation_never_becomes_evidence() -> None:
     assert observation.structured_result == {"valid": True}
     assert not hasattr(observation, "capability_result")
     assert not hasattr(observation, "sources")
+
+
+def test_agent_context_is_server_derived_data_for_capabilities_only() -> None:
+    context = ConversationContext(
+        conversation_id=7,
+        messages=(ConversationContextMessage(MessageRole.USER, "previous request"),),
+        turn_count=0,
+        char_count=16,
+    )
+    request = AgentRequest("request-1", "continue", conversation_context=context)
+    personal_capability = FakePersonal()
+    AgentCapabilityExecutor().invoke_personal(request, personal_capability)
+    assert personal_capability.context == context
 
 
 def test_tool_error_is_safe_failed_observation() -> None:

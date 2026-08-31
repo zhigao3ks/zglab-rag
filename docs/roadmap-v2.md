@@ -44,7 +44,7 @@ Phase 14    Agent Orchestrator                              ✅ SEALED
 
 UX Track     Frontend / Product Experience Stabilization   ✅ COMPLETE
 
-Phase 15    Conversation & Session Memory                   ← IN PROGRESS (15A ✅, 15B NEXT)
+Phase 15    Conversation & Session Memory                   ← IN PROGRESS (15A/15B ✅, 15C NEXT)
 Phase 16    Retrieval Intelligence & Knowledge Graph
 Phase 17    Agent Analyst
 Phase 18    Advanced Agent Autonomy / Bounded ReAct
@@ -277,7 +277,7 @@ Message
 - 历史会话恢复；
 - 删除/归档策略。
 
-### 15B — Multi-turn Context
+### 15B — Multi-turn Context ✅ COMPLETE
 
 解决指代与连续理解：
 
@@ -288,7 +288,12 @@ A1: BGE-small-zh-v1.5 ...
 Q2: 那它跟 E5 相比呢？
 ```
 
-Context assembly 需要 bounded，不允许简单无限拼接历史消息。
+已完成 server-derived bounded recent-turn context：只读取同一 owner、同一
+conversation 的已完成 USER/ASSISTANT 轮次；以 newest-N 选择、按 chronological
+顺序渲染，并由 turn / total chars / message chars 三个硬上限约束。上下文是低信任
+指代解析数据，绝不是 Evidence、source 或 capability policy。Personal、Web 与 Agent
+均通过同一 `CapabilityContext` / `AgentRequest` 接收该 context；每一轮仍只使用本轮
+retrieval / Web evidence 生成 citation。没有 summary、历史语义检索或资源复用。
 
 ### 15C — Context Compression
 

@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # Phase 15A1 storage foundation. This path is intentionally not wired
     # into API/runtime behavior until a later explicitly authorized slice.
     conversation_database_path: Path = Path("runtime/conversation.db")
+    # Phase 15B: bounded recent completed turns only. No summary, semantic
+    # retrieval, cache, or long-term memory is part of these limits.
+    conversation_context_max_turns: int = Field(default=4, ge=1, le=12)
+    conversation_context_max_chars: int = Field(default=6000, ge=200, le=24000)
+    conversation_context_max_message_chars: int = Field(default=2000, ge=100, le=8000)
     # Public origin used to build activation URLs in CLI output and to
     # validate Origin/Referer headers; set to https://ask.zglab.fun in prod.
     auth_public_base_url: str = "http://localhost:8000"

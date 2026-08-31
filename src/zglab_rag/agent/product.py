@@ -78,9 +78,15 @@ def execute_agent(
     *,
     request_id: str,
     principal,
+    conversation_context=None,
 ) -> AgentAnswer:
     """Run one frozen deterministic plan through existing bounded adapters."""
-    request = AgentRequest(request_id=request_id, question=question, principal=principal)
+    request = AgentRequest(
+        request_id=request_id,
+        question=question,
+        principal=principal,
+        conversation_context=conversation_context,
+    )
     if progress is not None:
         progress(ProgressStage.PLANNING)
     plan = BoundedPlanner().plan(request)

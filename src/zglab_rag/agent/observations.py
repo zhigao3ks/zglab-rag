@@ -53,7 +53,11 @@ class AgentCapabilityExecutor:
 
     @staticmethod
     def _context(request: AgentRequest) -> CapabilityContext:
-        return CapabilityContext(request_id=request.request_id, principal=request.principal)
+        return CapabilityContext(
+            request_id=request.request_id,
+            principal=request.principal,
+            conversation_context=request.conversation_context,
+        )
 
     def invoke_personal(
         self, request: AgentRequest, capability: Capability

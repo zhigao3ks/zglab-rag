@@ -1,9 +1,10 @@
-"""Framework-free Conversation persistence foundation (Phase 15A1).
+"""Framework-free Conversation persistence and bounded context domain."""
 
-This package deliberately owns only conversation and message storage. It is
-not wired to HTTP, SSE, prompt assembly, or the existing ask runtime yet.
-"""
-
+from zglab_rag.conversation.context import (
+    ConversationContext,
+    ConversationContextMessage,
+    assemble_conversation_context,
+)
 from zglab_rag.conversation.database import CONVERSATION_SCHEMA_VERSION, ConversationDatabase
 from zglab_rag.conversation.models import Conversation, Message, MessageRole
 from zglab_rag.conversation.repositories import ConversationRepository, MessageRepository
@@ -11,9 +12,12 @@ from zglab_rag.conversation.repositories import ConversationRepository, MessageR
 __all__ = [
     "CONVERSATION_SCHEMA_VERSION",
     "Conversation",
+    "ConversationContext",
+    "ConversationContextMessage",
     "ConversationDatabase",
     "ConversationRepository",
     "Message",
     "MessageRepository",
     "MessageRole",
+    "assemble_conversation_context",
 ]

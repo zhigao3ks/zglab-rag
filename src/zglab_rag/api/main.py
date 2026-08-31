@@ -103,7 +103,8 @@ from zglab_rag.capabilities.contracts import (
 from zglab_rag.capabilities.errors import CapabilityTechnicalError
 from zglab_rag.capabilities.selection import AskMode, CapabilitySelection, select_capability
 from zglab_rag.config import Settings, get_settings
-from zglab_rag.conversation.database import ConversationDatabase
+from zglab_rag.conversation.context import ConversationContext, assemble_conversation_context
+from zglab_rag.conversation.database import ConversationDatabase, ConversationDatabaseError
 from zglab_rag.conversation.models import Conversation, Message, MessageRole
 from zglab_rag.conversation.repositories import ConversationRepository, MessageRepository
 from zglab_rag.generation.contracts import (
@@ -819,6 +820,29 @@ def create_app(
         finally:
             connection.close()
 
+    def _load_conversation_context(
+        owner_user_id: int, conversation_id: int
+    ) -> ConversationContext | None:
+        """Load only bounded prior complete turns, owner-scoped in conversation.db."""
+        database: ConversationDatabase = app.state.conversation_database
+        connection = database.connect(initialize=True)
+        try:
+            repository = ConversationRepository(connection)
+            if repository.get(owner_user_id=owner_user_id, conversation_id=conversation_id) is None:
+                return None
+            messages = MessageRepository(connection).list_for_conversation(
+                owner_user_id=owner_user_id, conversation_id=conversation_id
+            )
+            return assemble_conversation_context(
+                conversation_id=conversation_id,
+                messages=messages,
+                max_turns=settings.conversation_context_max_turns,
+                max_chars=settings.conversation_context_max_chars,
+                max_message_chars=settings.conversation_context_max_message_chars,
+            )
+        finally:
+            connection.close()
+
     def _conversation_not_found(request_id: str) -> JSONResponse:
         # Owner mismatch and nonexistent IDs intentionally share this exact
         # public response, so conversation IDs cannot be enumerated.
@@ -897,6 +921,39 @@ def create_app(
         if conversation is None:
             return _conversation_not_found(request_id)
         return None
+
+    async def _conversation_context_for_request(
+        principal: AuthenticatedPrincipal,
+        conversation_id: int | None,
+        request_id: str,
+    ) -> ConversationContext | JSONResponse | None:
+        if conversation_id is None:
+            return None
+        try:
+            context = await asyncio.to_thread(
+                _load_conversation_context, principal.user_id, conversation_id
+            )
+        except ConversationDatabaseError:
+            logger.error("conversation_context_load_failed request_id=%s", request_id)
+            return _error_response(
+                request_id,
+                PublicErrorCode.INTERNAL_ERROR,
+                "An unexpected error occurred",
+                status_code=500,
+            )
+        if context is None:
+            return _conversation_not_found(request_id)
+        logger.info(
+            "request_id=%s conversation_context_turns=%s conversation_context_chars=%s "
+            "conversation_context_truncated=%s",
+            request_id,
+            context.turn_count,
+            context.char_count,
+            context.truncated,
+        )
+        # Keep legacy single-turn service doubles and runtime calls exactly
+        # unchanged when no completed prior turn exists.
+        return None if context.is_empty else context
 
     def _persist_assistant_answer(
         principal: AuthenticatedPrincipal,
@@ -1286,6 +1343,11 @@ def create_app(
             "agent" if is_agent else selection.capability_id,
             "explicit_agent" if is_agent else selection.reason.value,
         )
+        conversation_context = await _conversation_context_for_request(
+            principal, body.conversation_id, request_id
+        )
+        if isinstance(conversation_context, JSONResponse):
+            return conversation_context
 
         try:
             guard.acquire()
@@ -1365,6 +1427,7 @@ def create_app(
                 question,
                 request_id=request_id,
                 principal=principal,
+                conversation_context=conversation_context,
             )
         except RuntimeError:
             # Shutdown race: refund the quota, the work never started.
@@ -1442,6 +1505,11 @@ def create_app(
             "agent" if is_agent else selection.capability_id,
             "explicit_agent" if is_agent else selection.reason.value,
         )
+        conversation_context = await _conversation_context_for_request(
+            principal, body.conversation_id, request_id
+        )
+        if isinstance(conversation_context, JSONResponse):
+            return conversation_context
 
         try:
             guard.acquire()
@@ -1519,6 +1587,7 @@ def create_app(
             settings,
             on_submit_failure=_refund_quota,
             principal=principal,
+            conversation_context=conversation_context,
             execute=_execute_agent
             if is_agent
             else (_execute_web_generation if is_web else _execute_generation),
@@ -1673,6 +1742,7 @@ def _execute_generation(
     *,
     request_id: str = "",
     principal: AuthenticatedPrincipal | None = None,
+    conversation_context: ConversationContext | None = None,
 ) -> GenerationResult:
     """Execute the blocking generation call through the capability boundary.
 
@@ -1688,7 +1758,11 @@ def _execute_generation(
         runtime = _get_runtime()
 
     skill = runtime.capability_registry.get(PERSONAL_KNOWLEDGE_CAPABILITY_ID)
-    context = CapabilityContext(request_id=request_id, principal=principal)
+    context = CapabilityContext(
+        request_id=request_id,
+        principal=principal,
+        conversation_context=conversation_context,
+    )
     try:
         result = skill.execute(CapabilityRequest(question=question), context, progress=progress)
     except CapabilityTechnicalError as exc:
@@ -1704,6 +1778,7 @@ def _execute_web_generation(
     *,
     request_id: str = "",
     principal: AuthenticatedPrincipal | None = None,
+    conversation_context: ConversationContext | None = None,
 ) -> GenerationResult:
     """Execute the blocking web-research answer through the skill boundary.
 
@@ -1747,7 +1822,11 @@ def _execute_web_generation(
 
     research_progress.last = None
 
-    context = CapabilityContext(request_id=request_id, principal=principal)
+    context = CapabilityContext(
+        request_id=request_id,
+        principal=principal,
+        conversation_context=conversation_context,
+    )
     result = skill.answer(CapabilityRequest(question=question), context, progress=research_progress)
     if result.generation is None:
         # Research infrastructure failure (no GenerationResult at all):
@@ -1763,6 +1842,7 @@ def _execute_agent(
     *,
     request_id: str = "",
     principal: AuthenticatedPrincipal | None = None,
+    conversation_context: ConversationContext | None = None,
 ) -> AgentAnswer:
     """Product wrapper for the bounded internal Agent runtime."""
     if runtime is None:
@@ -1773,6 +1853,7 @@ def _execute_agent(
         progress,
         request_id=request_id,
         principal=principal,
+        conversation_context=conversation_context,
     )
 
 
@@ -1835,6 +1916,7 @@ async def _open_ask_stream(
     *,
     on_submit_failure: callable | None = None,
     principal: AuthenticatedPrincipal | None = None,
+    conversation_context: ConversationContext | None = None,
     execute: callable = None,
     extra_done_guards: list[ConcurrencyGuard] | None = None,
     on_business_result: Callable[[PublicAskResponse], None] | None = None,
@@ -1880,6 +1962,7 @@ async def _open_ask_stream(
             _progress,
             request_id=request_id,
             principal=principal,
+            conversation_context=conversation_context,
         )
     except RuntimeError:
         # Executor was shut down (graceful shutdown in progress).

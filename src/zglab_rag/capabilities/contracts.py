@@ -22,6 +22,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from zglab_rag.auth.models import AuthenticatedPrincipal
+from zglab_rag.conversation.context import ConversationContext
 from zglab_rag.generation.contracts import (
     EvidenceOrigin,
     GenerationResult,
@@ -96,6 +97,9 @@ class CapabilityContext:
 
     request_id: str
     principal: AuthenticatedPrincipal | None = None
+    # Server-derived, low-trust reference data. It cannot select a capability,
+    # alter policy, or become evidence/citations.
+    conversation_context: ConversationContext | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from zglab_rag.auth.models import AuthenticatedPrincipal
 from zglab_rag.capabilities.contracts import CapabilityResult
+from zglab_rag.conversation.context import ConversationContext
 from zglab_rag.generation.contracts import AnswerSource
 
 
@@ -42,6 +43,7 @@ class AgentRequest:
     request_id: str
     question: str
     principal: AuthenticatedPrincipal | None = None
+    conversation_context: ConversationContext | None = None
 
 
 @dataclass(frozen=True, slots=True)

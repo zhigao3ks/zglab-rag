@@ -1,6 +1,8 @@
 # Phase 15A — Conversation Persistence
 
-Phase 15A1 建立 framework-free domain 与独立 SQLite storage；15A2 在此基础上接入 authenticated Conversation API 和可选 ask persistence；15A3 把 Conversation API 接入 Vue 前端，完成 Session Sidebar 与历史恢复。历史消息始终只是 persisted UI history，从不进入生成上下文。
+Phase 15A1 建立 framework-free domain 与独立 SQLite storage；15A2 在此基础上接入 authenticated Conversation API 和可选 ask persistence；15A3 把 Conversation API 接入 Vue 前端，完成 Session Sidebar 与历史恢复。Phase 15B 在此基础上增加 server-derived bounded multi-turn context。
+
+完整的 Phase 15B context 设计与安全边界见 `docs/conversation-context.md`。
 
 ## 独立生命周期
 

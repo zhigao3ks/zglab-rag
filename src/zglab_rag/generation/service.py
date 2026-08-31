@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from zglab_rag.conversation.context import ConversationContext
 from zglab_rag.generation.citation import (
     CitationValidation,
     resolve_sources,
@@ -239,6 +240,7 @@ class GroundedAnswerService:
         retrieval_mode: RetrievalMode | None = None,
         top_k: int | None = None,
         progress: ProgressCallback | None = None,
+        conversation_context: ConversationContext | None = None,
     ) -> GenerationResult:
         mode = retrieval_mode or self.config.retrieval_mode
         retrieval_top_k = top_k or self.config.retrieval_top_k
@@ -248,8 +250,13 @@ class GroundedAnswerService:
         notify(ProgressStage.RETRIEVING)
         retrieval_started = perf_counter()
         try:
+            retrieval_query = (
+                conversation_context.retrieval_query(question)
+                if conversation_context is not None
+                else question
+            )
             response = self.retriever.retrieve(
-                RetrievalQuery(text=question, top_k=retrieval_top_k)
+                RetrievalQuery(text=retrieval_query, top_k=retrieval_top_k)
             )
         except GenerationError:
             raise
@@ -257,7 +264,9 @@ class GroundedAnswerService:
             raise RetrievalFailure(f"retrieval failed: {exc}") from exc
         retrieval_ms = (perf_counter() - retrieval_started) * 1000
 
-        context = self.context_builder.build(question, response.results)
+        context = self.context_builder.build(
+            question, response.results, conversation_context=conversation_context
+        )
         if not context.evidence:
             # Personal-specific early exit kept verbatim (failure_reason and
             # wording are part of the frozen Phase 8 behavior).
