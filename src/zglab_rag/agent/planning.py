@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -79,6 +80,16 @@ _TOOLS = (
     ("timestamp_convert", ("时间戳", "timestamp")),
 )
 
+# History may only fill an argument for a tool which the current question has
+# already selected. Labels are intentionally narrow and per-tool: history is
+# never a router, a permission input, or an opportunity to infer a value.
+_HISTORY_ARGUMENT_LABELS: dict[str, tuple[str, ...]] = {
+    "json_format": ("JSON",),
+    "base64_decode": ("Base64",),
+    "text_count": ("文本", "字符串", "内容"),
+    "timestamp_convert": ("时间戳",),
+}
+
 
 class BoundedPlanner:
     """Auditable deterministic router; a Phase 14C executor is deliberately absent."""
@@ -117,8 +128,9 @@ class BoundedPlanner:
 
     @staticmethod
     def _tool(request: AgentRequest, tool_id: str, question: str) -> AgentPlan:
-        marker = question.split("：", 1)
-        if len(marker) == 1:
+        explicit_argument = BoundedPlanner._explicit_argument(question)
+        argument = explicit_argument or BoundedPlanner._history_argument(request, tool_id)
+        if argument is None:
             return AgentPlan(
                 request_id=request.request_id,
                 status=PlanStatus.NEEDS_INPUT,
@@ -141,7 +153,35 @@ class BoundedPlanner:
                     type=PlanStepType.TOOL,
                     intent="explicit tool",
                     tool_id=tool_id,
-                    tool_input={"text": marker[1].strip()},
+                    tool_input={"text": argument},
                 ),
             ),
         )
+
+    @staticmethod
+    def _explicit_argument(question: str) -> str | None:
+        """Keep the existing current-question parameter syntax authoritative."""
+        marker = re.split(r"[：:]", question, maxsplit=1)
+        if len(marker) != 2:
+            return None
+        value = marker[1].strip()
+        return value or None
+
+    @staticmethod
+    def _history_argument(request: AgentRequest, tool_id: str) -> str | None:
+        """Return one explicitly labelled recent USER value, never a guess."""
+        context = request.conversation_context
+        labels = _HISTORY_ARGUMENT_LABELS.get(tool_id, ())
+        if context is None or not labels:
+            return None
+        label_pattern = "|".join(re.escape(label) for label in labels)
+        expression = re.compile(rf"(?:^|\n)\s*(?:{label_pattern})\s*[：:]\s*(.+?)\s*$")
+        for message in reversed(context.messages):
+            if message.role.value != "USER":
+                continue
+            match = expression.search(message.content)
+            if match is not None:
+                value = match.group(1).strip()
+                if value:
+                    return value
+        return None
