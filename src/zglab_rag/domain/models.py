@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Literal
@@ -27,6 +28,29 @@ class Visibility(StrEnum):
     PRIVATE = "private"
 
 
+_REPOSITORY_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
+_SOURCE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+class SourceAcquisition(BaseModel):
+    """Controlled transport location for a canonical Git repository.
+
+    ``repository`` on ``SourceDefinition`` remains the public, canonical GitHub
+    identity.  This model deliberately admits a provider/repository pair rather
+    than an arbitrary URL, so registry data cannot turn the maintenance job into
+    a general-purpose git clone endpoint.
+    """
+
+    provider: Literal["gitee"]
+    repository: str
+
+    @model_validator(mode="after")
+    def validate_repository(self) -> SourceAcquisition:
+        if not _REPOSITORY_SLUG.fullmatch(self.repository):
+            raise ValueError("acquisition repository must be an owner/repository slug, not a URL")
+        return self
+
+
 class SourceDefinition(BaseModel):
     id: str
     enabled: bool = True
@@ -38,21 +62,26 @@ class SourceDefinition(BaseModel):
     path: str | None = None
     repository: str | None = None
     ref: str | None = None
+    acquisition: SourceAcquisition | None = None
     local_path: str | None = None
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_source_location(self) -> SourceDefinition:
+        if not _SOURCE_ID.fullmatch(self.id):
+            raise ValueError("source id must be a lowercase filesystem-safe identifier")
         self._validate_patterns("include", self.include)
         self._validate_patterns("exclude", self.exclude)
 
         if self.kind == SourceKind.GIT:
             if not self.repository:
                 raise ValueError("git source requires 'repository'")
-            if not self.local_path:
-                raise ValueError("git source requires 'local_path'")
-            if PurePosixPath(self.local_path).is_absolute():
+            if not _REPOSITORY_SLUG.fullmatch(self.repository):
+                raise ValueError("git source repository must be an owner/repository slug")
+            if not self.local_path and not self.acquisition:
+                raise ValueError("git source requires 'local_path' or 'acquisition'")
+            if self.local_path and PurePosixPath(self.local_path).is_absolute():
                 raise ValueError("git source 'local_path' must be relative to the project root")
             if not self.include:
                 raise ValueError("git source requires a non-empty include allowlist")

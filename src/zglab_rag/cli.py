@@ -92,6 +92,14 @@ def _parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Index the current registered Git checkouts without fetching remotes",
             )
+
+    sources = commands.add_parser("sources", help="Manage explicitly registered source checkouts")
+    source_commands = sources.add_subparsers(dest="sources_command", required=True)
+    bootstrap = source_commands.add_parser(
+        "bootstrap", help="Clone or fast-forward configured managed Git sources"
+    )
+    bootstrap.add_argument("--sources-config", type=Path)
+    bootstrap.add_argument("--source", action="append", dest="source_ids")
     return parser
 
 
@@ -142,6 +150,7 @@ def _sync(args: argparse.Namespace) -> int:
         git_results = fast_forward_registered_sources(
             [registry.get_enabled(source_id) for source_id in source_ids],
             project_root=Path.cwd(),
+            source_checkout_root=settings.source_checkout_root,
         )
         for git_result in git_results:
             print(
@@ -194,6 +203,25 @@ def _sync(args: argparse.Namespace) -> int:
         print(
             f"apply: run_id={result.run_id} embedded={result.embedded_chunks} "
             f"elapsed_seconds={result.elapsed_seconds:.3f}"
+        )
+    return 0
+
+
+def _sources(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    config_path = args.sources_config or settings.sources_config
+    registry = SourceRegistry.from_yaml(config_path)
+    source_ids = _source_ids(config_path, args.source_ids)
+    results = fast_forward_registered_sources(
+        [registry.get_enabled(source_id) for source_id in source_ids],
+        project_root=Path.cwd(),
+        source_checkout_root=settings.source_checkout_root,
+    )
+    for result in results:
+        print(
+            f"git_source={result.source_id} cloned={str(result.cloned).lower()} "
+            f"updated={str(result.changed).lower()} before={result.before_revision or '-'} "
+            f"after={result.after_revision}"
         )
     return 0
 
@@ -363,6 +391,8 @@ def main(argv: list[str] | None = None) -> int:
             return _auth(args)
         if args.command == "user":
             return _user(args)
+        if args.command == "sources":
+            return _sources(args)
         return _sync(args)
     except Exception as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)

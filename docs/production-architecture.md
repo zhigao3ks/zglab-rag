@@ -301,7 +301,15 @@ Phase 14 部署前后双库均已完成 integrity check，auth schema v3 → v4 
 
 ## 12. 知识同步
 
-`zglab-rag-sync.timer` 负责已注册 Git knowledge sources 的 fast-forward-only 同步与增量索引。
+`zglab-rag-sync.timer` 负责已注册 Git knowledge sources 的受控 acquisition、fast-forward-only
+同步与增量索引。GitHub canonical repository 保持 provenance / citation 语义；生产 clone/fetch
+使用 registry 显式声明的 Gitee mirror，managed checkout 位于
+`ZGLAB_RAG_SOURCE_CHECKOUT_ROOT`（生产为 `/opt/zglab-rag/sources/<source-id>`）。
+
+sync service 仅为该目录增加写权限，API service 不获得该权限。首次 clone 使用临时目录并在
+Git root、origin、revision 校验后 rename；dirty checkout、origin mismatch、fetch failure 或非 FF
+merge 会 fail closed，且不会打开或破坏 serving index。详见
+[`source-acquisition.md`](source-acquisition.md)。
 
 远端不可达、checkout 不干净、解析 / Embedding 失败时不得破坏上一版 `knowledge.db`。
 Web Research、Session、Agent observation 与 ToolResult 均不应被同步任务自动写入 Personal Knowledge。

@@ -13,6 +13,7 @@ Environment=ZGLAB_RAG_DATA_DIR=/opt/zglab-rag/runtime
 Environment=ZGLAB_RAG_DATABASE_PATH=/opt/zglab-rag/runtime/knowledge.db
 Environment=ZGLAB_RAG_BACKUP_DIR=/opt/zglab-rag/runtime/backups
 Environment=ZGLAB_RAG_SOURCES_CONFIG=/opt/zglab-rag/app/config/sources.yaml
+Environment=ZGLAB_RAG_SOURCE_CHECKOUT_ROOT=/opt/zglab-rag/sources
 Environment=HF_ENDPOINT=https://hf-mirror.com
 Environment=HF_HUB_OFFLINE=1
 Environment=PYTHONPATH=/opt/zglab-rag/app/src
@@ -21,4 +22,4 @@ ExecStartPost=/usr/bin/systemctl try-restart zglab-rag-api.service
 TimeoutStartSec=900
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=/opt/zglab-rag/runtime /opt/zglab-rag/models
+ReadWritePaths=/opt/zglab-rag/runtime /opt/zglab-rag/models /opt/zglab-rag/sources

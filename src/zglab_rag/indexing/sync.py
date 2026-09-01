@@ -71,7 +71,11 @@ def acquire_sources(
     for source_id in dict.fromkeys(source_ids):
         source = registry.get_enabled(source_id)
         pipeline = MarkdownSourceIngestionPipeline(
-            create_source_adapter(source, project_root=project_root),
+            create_source_adapter(
+                source,
+                project_root=project_root,
+                source_checkout_root=settings.source_checkout_root,
+            ),
             MarkdownDocumentParser(),
             chunker,
         )

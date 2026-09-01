@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     backup_dir: Path = Path("runtime/backups")
     backup_retain_count: int = 7
     sources_config: Path = Path("config/sources.yaml")
+    # Managed Git checkouts live outside the deployed application tree in
+    # production.  Sources without acquisition metadata continue using their
+    # legacy relative local_path.
+    source_checkout_root: Path = Path("runtime/sources")
     default_visibility: str = "public"
 
     chunk_target_size: int = 700

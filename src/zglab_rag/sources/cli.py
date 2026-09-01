@@ -48,11 +48,19 @@ def main(argv: list[str] | None = None) -> int:
         registry = SourceRegistry.from_yaml(config_path)
         if args.command == "list":
             for source in registry.all():
-                adapter = create_source_adapter(source, project_root=project_root)
+                adapter = create_source_adapter(
+                    source,
+                    project_root=project_root,
+                    source_checkout_root=settings.source_checkout_root,
+                )
                 _print_snapshot(source, adapter.inspect(source), include_documents=False)
         else:
             source = registry.get_enabled(args.source_id)
-            adapter = create_source_adapter(source, project_root=project_root)
+            adapter = create_source_adapter(
+                source,
+                project_root=project_root,
+                source_checkout_root=settings.source_checkout_root,
+            )
             _print_snapshot(
                 source,
                 adapter.inspect(source),

@@ -69,6 +69,15 @@ Phase 19    Owner Agent / Advanced Permissions
 
 Evaluation、performance、monitoring、documentation reconciliation 等继续作为跨阶段基础设施，不单独占 Product Phase。
 
+当前独立维护项：
+
+```text
+Maintenance Track — Source Acquisition & Gitee Mirror Runtime
+```
+
+该 Track 只强化公开知识源的生产 clone/fetch 和部署可靠性，不改变 Phase 15 的 conversation
+memory、context compression 或 Agent 能力。
+
 ---
 
 ## 3. 已封板阶段

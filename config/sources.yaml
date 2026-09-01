@@ -23,6 +23,11 @@ sources:
     priority: 80
     repository: zhigao3ks/notes
     ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/notes
+    # Legacy development override for older configs. Managed checkout is used
+    # whenever acquisition is configured.
     local_path: ../notes
     include:
       - README.md
@@ -44,6 +49,9 @@ sources:
     priority: 90
     repository: zhigao3ks/zglab-website
     ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/zglab-website
     local_path: ../zglab-website
     include:
       - README.md
@@ -67,6 +75,9 @@ sources:
     priority: 90
     repository: zhigao3ks/resume-tailor-agent
     ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/resume-tailor-agent
     local_path: ../resume-tailor-agent
     include:
       - README.md
@@ -87,6 +98,9 @@ sources:
     priority: 85
     repository: zhigao3ks/zglab-tools
     ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/zglab-tools
     local_path: ../zglab-tools
     include:
       - README.md
@@ -108,6 +122,9 @@ sources:
     priority: 80
     repository: zhigao3ks/zglab-daily
     ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/zglab-daily
     local_path: ../zglab-daily
     include:
       - README.md

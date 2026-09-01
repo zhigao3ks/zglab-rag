@@ -52,7 +52,11 @@ def main(argv: list[str] | None = None) -> int:
         markdown_parser = MarkdownDocumentParser()
         if args.source:
             source = registry.get_enabled(args.source)
-            adapter = create_source_adapter(source, project_root=project_root)
+            adapter = create_source_adapter(
+                source,
+                project_root=project_root,
+                source_checkout_root=settings.source_checkout_root,
+            )
             source_result = MarkdownSourceIngestionPipeline(
                 adapter=adapter,
                 parser=markdown_parser,

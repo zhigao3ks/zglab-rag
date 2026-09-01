@@ -22,27 +22,33 @@ _MARKDOWN_SUFFIXES = {".md", ".markdown"}
 class LocalGitSource:
     """Discover allowlisted Markdown files in one registered local Git repository."""
 
-    def __init__(self, project_root: str | Path) -> None:
+    def __init__(
+        self, project_root: str | Path, *, source_checkout_root: str | Path | None = None
+    ) -> None:
         self._project_root = Path(project_root).resolve()
+        self._source_checkout_root = (
+            Path(source_checkout_root).resolve() if source_checkout_root is not None else None
+        )
 
     def inspect(self, source: SourceDefinition) -> SourceSnapshot:
         repository_path = self._repository_path(source)
         revision = self._git(repository_path, "rev-parse", "HEAD")
         remote_url = self._optional_origin(repository_path)
-        if remote_url and source.repository:
+        expected_remote = _acquisition_remote(source) or source.repository
+        if remote_url and expected_remote:
             actual_repository = _repository_slug(remote_url)
-            expected_repository = _repository_slug(source.repository)
+            expected_repository = _repository_slug(expected_remote)
             if actual_repository.casefold() != expected_repository.casefold():
                 raise RepositoryMismatchError(
                     f"Git source '{source.id}' origin '{remote_url}' does not match configured "
-                    f"repository '{source.repository}'"
+                    f"repository '{expected_remote}'"
                 )
 
         document_paths = tuple(self._discover(repository_path, source))
         return SourceSnapshot(
             source_id=source.id,
             kind=source.kind,
-            configured_path=source.local_path or "",
+            configured_path=self._configured_path(source),
             revision=revision,
             document_paths=document_paths,
             remote_url=remote_url,
@@ -77,13 +83,21 @@ class LocalGitSource:
             raise SourceConfigurationError(
                 f"Source '{source.id}' has kind '{source.kind}', expected 'git'"
             )
-        if not source.local_path:
-            raise SourceConfigurationError(f"Git source '{source.id}' is missing 'local_path'")
-
-        repository_path = (self._project_root / source.local_path).resolve()
+        if source.acquisition:
+            if self._source_checkout_root is None:
+                raise SourceConfigurationError(
+                    f"Git source '{source.id}' has acquisition metadata but no checkout root"
+                )
+            repository_path = self._source_checkout_root / source.id
+            configured_path = str(repository_path)
+        elif source.local_path:
+            repository_path = (self._project_root / source.local_path).resolve()
+            configured_path = source.local_path
+        else:
+            raise SourceConfigurationError(f"Git source '{source.id}' is missing a checkout path")
         if not repository_path.exists():
             raise SourcePathNotFoundError(
-                f"Git source '{source.id}' local_path does not exist: {source.local_path}"
+                f"Git source '{source.id}' checkout does not exist: {configured_path}"
             )
         if not repository_path.is_dir():
             raise NotGitRepositoryError(
@@ -96,9 +110,14 @@ class LocalGitSource:
         if top_level != repository_path:
             raise NotGitRepositoryError(
                 f"Git source '{source.id}' local_path must point to the repository root: "
-                f"{source.local_path}"
+                f"{configured_path}"
             )
         return repository_path
+
+    def _configured_path(self, source: SourceDefinition) -> str:
+        if source.acquisition and self._source_checkout_root is not None:
+            return str(self._source_checkout_root / source.id)
+        return source.local_path or ""
 
     def _discover(self, repository_path: Path, source: SourceDefinition) -> list[str]:
         if not source.include:
@@ -196,3 +215,14 @@ def _source_url(repository: str | None, revision: str | None, source_path: str) 
         return None
     repository_slug = _repository_slug(repository)
     return f"https://github.com/{repository_slug}/blob/{revision}/{quote(source_path, safe='/')}"
+
+
+def _acquisition_remote(source: SourceDefinition) -> str | None:
+    if source.acquisition is None:
+        return None
+    if source.acquisition.provider == "gitee":
+        return source.acquisition.repository
+    raise SourceConfigurationError(
+        f"Git source '{source.id}' has unsupported acquisition provider "
+        f"'{source.acquisition.provider}'"
+    )
