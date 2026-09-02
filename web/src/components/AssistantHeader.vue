@@ -5,9 +5,9 @@
   <header class="assistant-header">
     <div class="assistant-header__inner">
       <p class="assistant-header__brand">ZGLab</p>
-      <h1 class="assistant-header__title">Personal Knowledge Assistant</h1>
+      <h1 class="assistant-header__title">ZGLab AI Assistant</h1>
       <p class="assistant-header__tagline">
-        关于我、项目和技术笔记，可以在这里问我。
+        基于可追溯公开知识与受控能力，为项目、技术与研究问题提供回答。
       </p>
     </div>
   </header>

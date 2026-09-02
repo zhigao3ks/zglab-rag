@@ -71,9 +71,10 @@ describe("landing (public, anonymous)", () => {
     const wrapper = mount(LandingView, { global: { plugins: [router] } });
     const grid = wrapper.find('[data-testid="capability-grid"]');
     expect(grid.exists()).toBe(true);
-    expect(grid.text()).toContain("Personal Knowledge RAG");
+    expect(grid.text()).toContain("Personal Knowledge");
     expect(grid.text()).toContain("Web Research");
-    expect(grid.text()).toContain("planned");
+    expect(grid.text()).toContain("已上线");
+    expect(grid.text()).not.toContain("planned");
     expect(wrapper.find('[data-testid="landing-login"]').exists()).toBe(true);
   });
 });

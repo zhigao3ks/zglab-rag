@@ -3,12 +3,12 @@ import { router } from "../router";
 import { isAuthenticated } from "../auth/store";
 
 const capabilities = [
-  { title: "Personal Knowledge RAG", status: "live", text: "基于已允许公开的个人知识源进行检索与回答。" },
-  { title: "Evidence Grounding", status: "live", text: "事实性回答必须来自可追溯的证据，证据不足时明确说明。" },
-  { title: "Citation Validation", status: "live", text: "生成后逐条核验引用，拒绝无来源的事实陈述。" },
-  { title: "Web Research", status: "planned", text: "从公网检索并生成可验证的外部证据（规划中）。" },
-  { title: "MCP Tools", status: "planned", text: "通过 MCP 调用受控的确定性工具（规划中）。" },
-  { title: "Agent Orchestration", status: "planned", text: "组合多能力的受控 Agent 编排（规划中）。" },
+  { title: "Personal Knowledge", text: "检索公开项目、技术笔记与知识卡，并返回可追溯的来源。" },
+  { title: "Evidence Grounding", text: "回答只使用可验证的证据；信息不足时会明确说明。" },
+  { title: "Citation Validation", text: "生成后核验引用，避免把没有来源的推测当作事实。" },
+  { title: "Web Research", text: "按需检索公开网页，保留来源链接并与个人知识区分展示。" },
+  { title: "MCP Tools", text: "通过受控的确定性工具完成适合工具处理的任务。" },
+  { title: "Agent Orchestration", text: "在明确授权和边界内组合知识、联网研究与工具能力。" },
 ];
 
 function goLogin(): void {
@@ -43,9 +43,9 @@ function goLogin(): void {
     </header>
 
     <main class="landing__main">
-      <h1 class="landing__title">ZGLab Personal AI Agent</h1>
+      <h1 class="landing__title">ZGLab AI Assistant</h1>
       <p class="landing__subtitle">
-        以个人身份为主体的知识助手：回答基于可追溯、允许公开的证据，并附带来源引用。
+        基于公开、可追溯知识源的 AI 工作台。登录后可使用个人知识、联网研究、受控工具与 Agent 协作能力。
       </p>
 
       <section class="landing__grid" data-testid="capability-grid">
@@ -56,11 +56,8 @@ function goLogin(): void {
         >
           <div class="landing__card-head">
             <h2 class="landing__card-title">{{ capability.title }}</h2>
-            <span
-              class="landing__badge"
-              :class="capability.status === 'planned' ? 'landing__badge--planned' : 'landing__badge--live'"
-            >
-              {{ capability.status === "planned" ? "planned" : "live" }}
+            <span class="landing__badge landing__badge--live">
+              已上线
             </span>
           </div>
           <p class="landing__card-text">{{ capability.text }}</p>
@@ -75,7 +72,7 @@ function goLogin(): void {
     </main>
 
     <footer class="landing__footer">
-      展示内容匿名可见；问答等消费型 AI 能力需要登录使用。
+      产品介绍匿名可见；问答等消费型 AI 能力需要登录后使用。
     </footer>
   </div>
 </template>
@@ -175,12 +172,6 @@ function goLogin(): void {
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid var(--accent-border);
-}
-
-.landing__badge--planned {
-  background: transparent;
-  color: var(--text-muted);
-  border: 1px solid var(--border-subtle);
 }
 
 .landing__card-text {

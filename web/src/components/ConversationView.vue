@@ -13,19 +13,19 @@ const emit = defineEmits<{
 
 // Real questions the public knowledge base can stably answer.
 const EXAMPLE_PROMPTS = [
-  "你是谁？",
-  "你做过哪些 Agent 项目？",
-  "Agent Memory 和 Context 有什么区别？",
-  "你为什么在结构化 LLM 调用中使用 Provider？",
+  "ZGLab Personal AI Agent 当前有哪些核心能力？",
+  "Agentic 项目中的 Agent workflow 包含哪些主要能力？",
+  "多 Agent 医疗系统的 Agent 架构是什么？",
+  "企业 AI 会议助手如何处理实时录音、转写和断线恢复？",
 ];
 </script>
 
 <template>
   <section class="conversation" aria-label="对话记录">
     <div v-if="!hasConversation" class="conversation__empty" data-testid="empty-state">
-      <h2 class="conversation__empty-title">ZGLab Personal Knowledge Assistant</h2>
+      <h2 class="conversation__empty-title">ZGLab AI Assistant</h2>
       <p class="conversation__empty-intro">
-        我会基于允许公开的知识源回答问题，并给出可追溯的来源。试着问我：
+        我会基于公开、可追溯的知识源回答问题，并给出来源。试着问我：
       </p>
       <ul class="conversation__examples">
         <li v-for="prompt in EXAMPLE_PROMPTS" :key="prompt">

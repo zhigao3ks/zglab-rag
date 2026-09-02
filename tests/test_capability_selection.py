@@ -69,6 +69,11 @@ class TestAutoSelection:
         assert selection.capability_id == PERSONAL_KNOWLEDGE_CAPABILITY_ID
         assert selection.reason == SelectionReason.PERSONAL_SELF_REFERENCE
 
+    def test_product_knowledge_outranks_current_information(self) -> None:
+        selection = _select("ZGLab Personal AI Agent 当前有哪些核心能力？")
+        assert selection.capability_id == PERSONAL_KNOWLEDGE_CAPABILITY_ID
+        assert selection.reason == SelectionReason.PERSONAL_KNOWLEDGE_REFERENCE
+
     @pytest.mark.parametrize(
         "question",
         [

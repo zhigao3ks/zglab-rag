@@ -119,10 +119,10 @@ describe("empty state", () => {
     expect(workspace.find('[data-testid="message-scroller"]').exists()).toBe(true);
     const empty = wrapper.find('[data-testid="empty-state"]');
     expect(empty.exists()).toBe(true);
-    expect(empty.text()).toContain("ZGLab Personal Knowledge Assistant");
+    expect(empty.text()).toContain("ZGLab AI Assistant");
     const examples = wrapper.findAll(".conversation__example-button");
     expect(examples.length).toBeGreaterThanOrEqual(3);
-    expect(examples[0].text()).toBe("你是谁？");
+    expect(examples[0].text()).toBe("ZGLab Personal AI Agent 当前有哪些核心能力？");
   });
 
   it("clicking an example prompt sends it directly", async () => {
@@ -131,7 +131,7 @@ describe("empty state", () => {
     await wrapper.findAll(".conversation__example-button")[0].trigger("click");
     await flushPromises();
     expect(askStreamMock).toHaveBeenCalledTimes(1);
-    expect(askStreamMock.mock.calls[0][0]).toBe("你是谁？");
+    expect(askStreamMock.mock.calls[0][0]).toBe("ZGLab Personal AI Agent 当前有哪些核心能力？");
     expect(wrapper.find('[data-testid="answer-text"]').text()).toBe("这是回答。");
   });
 });

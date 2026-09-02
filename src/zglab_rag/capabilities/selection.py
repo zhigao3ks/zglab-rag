@@ -8,9 +8,9 @@ and cost-predictable.
 
 Conservative rules:
 - explicit ``mode=personal/web`` always wins;
-- self-reference / personal identity questions go to PERSONAL first
-  (Personal Facts Integrity: web search must never rewrite the owner's
-  own biography);
+- self-reference / personal identity and product-knowledge questions go to
+  PERSONAL first (Personal Facts Integrity: web search must never rewrite
+  the owner's own biography or replace the product's indexed documentation);
 - clearly current / external-information questions go to WEB;
 - anything ambiguous falls back to PERSONAL so ordinary questions never
   spend Search API budget.
@@ -45,6 +45,7 @@ class SelectionReason(StrEnum):
     EXPLICIT_PERSONAL = "explicit_personal"
     EXPLICIT_WEB = "explicit_web"
     PERSONAL_SELF_REFERENCE = "personal_self_reference"
+    PERSONAL_KNOWLEDGE_REFERENCE = "personal_knowledge_reference"
     CURRENT_INFORMATION = "current_information"
     DEFAULT_PERSONAL = "default_personal"
     WEB_DISABLED_FALLBACK_PERSONAL = "web_disabled_fallback_personal"
@@ -67,6 +68,17 @@ _SELF_REFERENCE_MARKERS = (
     "简历",
     "履历",
     "自我介绍",
+)
+
+# Product questions such as "ZGLab Personal AI Agent 当前有哪些核心能力？"
+# can naturally contain a time marker ("当前"), but the authoritative answer
+# is in the indexed public project documentation rather than on the web.
+# Keep this deliberately small and product-specific so generic current-event
+# queries retain their existing WEB behavior.
+_PERSONAL_KNOWLEDGE_MARKERS = (
+    "zglab",
+    "personal ai agent",
+    "personal knowledge assistant",
 )
 
 _CURRENT_INFORMATION_MARKERS = (
@@ -117,6 +129,11 @@ def select_capability(
     if _contains_any(normalized, _SELF_REFERENCE_MARKERS):
         return CapabilitySelection(
             PERSONAL_KNOWLEDGE_CAPABILITY_ID, SelectionReason.PERSONAL_SELF_REFERENCE
+        )
+    if _contains_any(normalized, _PERSONAL_KNOWLEDGE_MARKERS):
+        return CapabilitySelection(
+            PERSONAL_KNOWLEDGE_CAPABILITY_ID,
+            SelectionReason.PERSONAL_KNOWLEDGE_REFERENCE,
         )
     if _contains_any(normalized, _CURRENT_INFORMATION_MARKERS):
         if web_research_enabled:
