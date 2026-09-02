@@ -21,6 +21,15 @@ acquisition:
 `https://github.com/zhigao3ks/notes/blob/<revision>/<path>`；Gitee URL 不会进入
 public citation contract。
 
+GitHub 是 canonical provenance，Gitee 是 production acquisition mirror。推荐的发布顺序为：
+
+```text
+local → GitHub main → Gitee mirror → production sync
+```
+
+这样 public citation 始终可以使用 GitHub canonical URL 与对应 revision，即使生产服务器仅通过
+Gitee 获取内容。
+
 ## Checkout 生命周期
 
 生产设置：
@@ -53,10 +62,26 @@ LOCAL source 不参与 Git bootstrap；disabled source 也不会 clone。公开 
 
 ```bash
 sudo install -d -o zglab -g zglab -m 0750 /opt/zglab-rag/sources
-sudo -u zglab /opt/zglab-rag/app/.venv/bin/python -m zglab_rag.cli sources bootstrap
-sudo -u zglab /opt/zglab-rag/app/.venv/bin/python -m zglab_rag.cli sync plan
+sudo -u zglab env \
+  ZGLAB_RAG_SOURCES_CONFIG=/opt/zglab-rag/app/config/sources.yaml \
+  ZGLAB_RAG_SOURCE_CHECKOUT_ROOT=/opt/zglab-rag/sources \
+  PYTHONPATH=/opt/zglab-rag/app/src \
+  /opt/zglab-rag/app/.venv/bin/python -m zglab_rag.cli sources bootstrap
+
+sudo -u zglab env \
+  ZGLAB_RAG_DATABASE_PATH=/opt/zglab-rag/runtime/knowledge.db \
+  ZGLAB_RAG_BACKUP_DIR=/opt/zglab-rag/runtime/backups \
+  ZGLAB_RAG_SOURCES_CONFIG=/opt/zglab-rag/app/config/sources.yaml \
+  ZGLAB_RAG_SOURCE_CHECKOUT_ROOT=/opt/zglab-rag/sources \
+  HF_HOME=/opt/zglab-rag/models/huggingface \
+  HF_HUB_CACHE=/opt/zglab-rag/models/huggingface/hub \
+  HF_ENDPOINT=https://hf-mirror.com \
+  HF_HUB_OFFLINE=1 \
+  PYTHONPATH=/opt/zglab-rag/app/src \
+  /opt/zglab-rag/app/.venv/bin/python -m zglab_rag.cli sync plan
 ```
 
-确认 plan 后运行 `sync apply`。公开 Gitee mirror 不需要 credential；private mirror 应使用 Git
+生产手工 CLI 不依赖当前 WorkingDirectory 或 `.env` 的隐式加载；上述命令显式传入所有生产路径。
+确认 plan 后才通过 `zglab-rag-sync.service` 运行 `sync apply`。公开 Gitee mirror 不需要 credential；private mirror 应使用 Git
 credential helper、受保护环境凭据或 SSH deploy key，绝不把 token、密码或 SSH key 放进 YAML、URL、
 代码或 Git history。
