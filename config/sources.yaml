@@ -138,5 +138,120 @@ sources:
       - "**/node_modules/**"
       - "**/.git/**"
 
+  - id: zglab-rag
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 95
+    repository: zhigao3ks/zglab-rag
+    ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/zglab-rag
+    local_path: ../zglab-rag
+    include:
+      - README.md
+      - docs/roadmap-v2.md
+      - docs/architecture.md
+      - docs/production-architecture.md
+      - docs/authentication.md
+      - docs/capability-architecture.md
+      - docs/web-research-runtime.md
+      - docs/web-evidence-grounding.md
+      - docs/mcp-tool-runtime.md
+      - docs/agent-architecture.md
+      - docs/agent-product.md
+      - docs/conversation-persistence.md
+      - docs/conversation-context.md
+      - docs/source-acquisition.md
+      - docs/evaluations/phase-14-production-acceptance-2026-08-28.md
+      - docs/evaluations/source-acquisition-production-acceptance-2026-09-02.md
+    exclude:
+      - web/**
+      - src/**
+      - tests/**
+      - evaluation/**
+      - runtime/**
+      - models/**
+      - "**/.git/**"
+
+  - id: agentic
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 85
+    repository: zhigao3ks/Agentic
+    ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/Agentic
+    local_path: ../Agentic
+    include:
+      - README.md
+      - docs/**/*.md
+    exclude:
+      - app/**
+      - tests/**
+      - storage/**
+      - "*.db"
+      - "*.sqlite*"
+      - .env
+      - .env.*
+      - "**/__pycache__/**"
+      - "**/.git/**"
+
+  - id: medical-multi-agent-system
+    enabled: true
+    kind: git
+    scope: project
+    visibility: public
+    priority: 80
+    repository: zhigao3ks/medical-multi-agent-system
+    ref: main
+    acquisition:
+      provider: gitee
+      repository: Zg443/medical-multi-agent-system
+    local_path: ../medical-multi-agent-system
+    include:
+      - docs/00-项目概览.md
+      - docs/02-架构设计详解.md
+      - docs/03-Agent设计原理.md
+      - docs/04-GraphRAG知识图谱.md
+      - docs/05-FHIR-API集成.md
+      - docs/06-HIPAA合规设计.md
+    exclude:
+      - python/**
+      - java/**
+      - go/**
+      - docker/**
+      - tests/**
+      - "**/.git/**"
+
+  # These documents are the only public, de-identified project knowledge.
+  # Do not register their private source repositories as Git sources.
+  - id: ai-meeting-assistant
+    enabled: true
+    kind: local
+    scope: project
+    visibility: public
+    priority: 90
+    path: knowledge/projects/ai-meeting-assistant.md
+    include:
+      - knowledge/projects/ai-meeting-assistant.md
+    exclude: []
+
+  - id: ai-contract-review
+    enabled: true
+    kind: local
+    scope: project
+    visibility: public
+    priority: 90
+    path: knowledge/projects/ai-contract-review.md
+    include:
+      - knowledge/projects/ai-contract-review.md
+    exclude: []
+
 # Private/company sources are intentionally absent from the public source registry.
 # Do not add them to the public index merely because the GitHub account can access them.
