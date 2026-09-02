@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
@@ -86,6 +87,10 @@ class SentenceTransformerEmbeddingProvider:
         if not dimension:
             raise ValueError(f"Model '{config.model_name}' did not report an embedding dimension")
         self._dimension = dimension
+        # One model instance is shared by public retrieval and the internal
+        # embedding API. Serialize inference so concurrent callers do not race
+        # through the underlying SentenceTransformer model.
+        self._encode_lock = threading.Lock()
 
     @property
     def model_name(self) -> str:
@@ -133,7 +138,8 @@ class SentenceTransformerEmbeddingProvider:
             kwargs["prompt_name"] = "query"
 
         encoder = self._model.encode_query if query else self._model.encode_document
-        embeddings = np.asarray(encoder(texts, **kwargs), dtype=np.float32)
+        with self._encode_lock:
+            embeddings = np.asarray(encoder(texts, **kwargs), dtype=np.float32)
         if embeddings.shape != (len(texts), self.dimension):
             raise ValueError(
                 f"Model '{self.model_name}' returned shape {embeddings.shape}; "

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -77,6 +77,21 @@ class Settings(BaseSettings):
     # false for local regression of Phase 9 contracts; production sets true
     # during the Phase 11 migration.
     api_v1_retired: bool = False
+
+    # Localhost-only embedding capability shared with trusted sibling services.
+    # The secret deliberately has no default and is never rendered in responses/logs.
+    internal_embedding_token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "INTERNAL_EMBEDDING_TOKEN", "ZGLAB_RAG_INTERNAL_EMBEDDING_TOKEN"
+        ),
+    )
+    internal_embedding_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    internal_embedding_max_texts: int = Field(default=64, ge=1, le=256)
+    internal_embedding_max_text_chars: int = Field(default=8000, ge=1, le=32000)
+    internal_embedding_max_request_body_bytes: int = Field(
+        default=512 * 1024, ge=1024, le=2 * 1024 * 1024
+    )
 
     # Phase 11 Authentication & Access Control
     auth_database_path: Path = Path("runtime/auth.db")

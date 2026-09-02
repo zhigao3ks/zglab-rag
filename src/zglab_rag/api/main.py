@@ -28,6 +28,7 @@ Security boundaries:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import queue
 import uuid
@@ -41,7 +42,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from zglab_rag.api.runtime import ProductionRuntime
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -61,6 +62,8 @@ from zglab_rag.api.contracts import (
     ConversationMessagePublic,
     ConversationPublic,
     ConversationTitleRequest,
+    InternalEmbeddingRequest,
+    InternalEmbeddingResponse,
     PublicAskRequest,
     PublicAskResponse,
     PublicErrorCode,
@@ -289,6 +292,13 @@ def create_app(
     # Request body size limit middleware
     @app.middleware("http")
     async def limit_request_body(request: Request, call_next):
+        if request.method == "POST" and request.url.path.startswith("/internal/embeddings/"):
+            content_length = request.headers.get("content-length")
+            if (
+                content_length
+                and int(content_length) > settings.internal_embedding_max_request_body_bytes
+            ):
+                return Response(status_code=413)
         # Only apply to the cost-bearing / credential-carrying endpoints
         if request.method in ("POST", "PATCH") and (
             request.url.path.startswith("/api/v2/conversations")
@@ -359,6 +369,61 @@ def create_app(
         if getattr(app.state, "ready", False):
             return {"status": "ready", "version": __version__}
         return JSONResponse(status_code=503, content={"status": "not_ready"})
+
+    async def _internal_embeddings(
+        payload: InternalEmbeddingRequest,
+        token: str | None,
+        *,
+        query: bool,
+    ) -> InternalEmbeddingResponse | Response:
+        configured = settings.internal_embedding_token
+        if configured is None or token is None or not hmac.compare_digest(
+            token.encode("utf-8"), configured.get_secret_value().encode("utf-8")
+        ):
+            # Hide the existence of the internal capability from untrusted callers.
+            return Response(status_code=404)
+        if len(payload.texts) > settings.internal_embedding_max_texts:
+            return Response(status_code=413)
+        if any(
+            not text.strip() or len(text) > settings.internal_embedding_max_text_chars
+            for text in payload.texts
+        ):
+            return Response(status_code=422)
+
+        runtime = app.state.runtime
+        if runtime is None:
+            return Response(status_code=503)
+        provider = runtime.embedding_components.provider
+        encode = provider.encode_queries if query else provider.encode_documents
+        loop = asyncio.get_running_loop()
+        try:
+            vectors = await asyncio.wait_for(
+                loop.run_in_executor(app.state.executor, encode, payload.texts),
+                timeout=settings.internal_embedding_timeout_seconds,
+            )
+        except TimeoutError:
+            logger.warning("internal_embedding_timeout mode=%s", "query" if query else "document")
+            return Response(status_code=504)
+        return InternalEmbeddingResponse(
+            model=provider.model_name,
+            dimension=provider.dimension,
+            normalized=bool(provider.config.normalize),
+            embeddings=vectors.tolist(),
+        )
+
+    @app.post("/internal/embeddings/query", response_model=InternalEmbeddingResponse)
+    async def internal_query_embeddings(
+        payload: InternalEmbeddingRequest,
+        x_internal_token: str | None = Header(default=None),
+    ) -> InternalEmbeddingResponse | Response:
+        return await _internal_embeddings(payload, x_internal_token, query=True)
+
+    @app.post("/internal/embeddings/documents", response_model=InternalEmbeddingResponse)
+    async def internal_document_embeddings(
+        payload: InternalEmbeddingRequest,
+        x_internal_token: str | None = Header(default=None),
+    ) -> InternalEmbeddingResponse | Response:
+        return await _internal_embeddings(payload, x_internal_token, query=False)
 
     @app.get("/sources")
     def list_public_sources() -> list[dict[str, object]]:

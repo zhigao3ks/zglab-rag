@@ -21,6 +21,23 @@ class PublicStatus(StrEnum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
 
 
+class InternalEmbeddingRequest(BaseModel):
+    """Narrow request shared by both internal embedding routes."""
+
+    model_config = {"extra": "forbid"}
+
+    texts: list[str] = Field(min_length=1)
+
+
+class InternalEmbeddingResponse(BaseModel):
+    """Embedding metadata and vectors returned to trusted local callers."""
+
+    model: str
+    dimension: int
+    normalized: bool
+    embeddings: list[list[float]]
+
+
 class PublicErrorCode(StrEnum):
     """Public error codes for the error envelope."""
 
