@@ -6,7 +6,11 @@ from datetime import UTC, datetime, timedelta
 
 from tests.test_auth_api import ASK_URL, STREAM_URL, ask_headers, authed_client
 from tests.test_conversation_api import create_conversation
-from zglab_rag.conversation.context import assemble_conversation_context
+from zglab_rag.conversation.context import (
+    ConversationContext,
+    ConversationContextMessage,
+    assemble_conversation_context,
+)
 from zglab_rag.conversation.database import ConversationDatabase
 from zglab_rag.conversation.models import Message, MessageRole
 from zglab_rag.conversation.relevance import select_relevant_turns
@@ -179,3 +183,73 @@ def test_summary_cannot_displace_newest_complete_turn() -> None:
         "latest assistant",
     ]
     assert context.truncated
+
+
+def test_long_summary_and_relevance_still_keep_both_newest_turn_roles() -> None:
+    latest_user = "u" * 1000
+    latest_assistant = "a" * 2000
+    relevant = [
+        (
+            _message(1, MessageRole.USER, "r" * 1000),
+            _message(2, MessageRole.ASSISTANT, "s" * 1000),
+        )
+    ]
+    context = assemble_conversation_context(
+        conversation_id=1,
+        messages=[
+            _message(1, MessageRole.USER, "old"),
+            _message(2, MessageRole.ASSISTANT, "old answer"),
+            _message(3, MessageRole.USER, latest_user),
+            _message(4, MessageRole.ASSISTANT, latest_assistant),
+        ],
+        max_turns=2,
+        max_chars=3000,
+        max_message_chars=2000,
+        max_bytes=9000,
+        summary="summary" * 300,
+        summary_max_chars=1600,
+        relevant_messages=relevant,
+        relevant_max_chars=1200,
+    )
+    assert context.recent_turn_count >= 1
+    assert context.relevant_messages == ()
+    assert [message.role for message in context.recent_messages[-2:]] == [
+        MessageRole.USER,
+        MessageRole.ASSISTANT,
+    ]
+    assert all(message.content for message in context.recent_messages[-2:])
+    assert len(context.render()) <= 3000
+    assert len(context.render().encode("utf-8")) <= 9000
+
+
+def test_retrieval_query_preserves_full_current_question_with_char_budget() -> None:
+    context = ConversationContext(
+        conversation_id=1,
+        messages=(ConversationContextMessage(MessageRole.USER, "history " * 500),),
+    )
+    question = "q" * 900
+    query = context.retrieval_query(question, max_chars=3000, max_bytes=9000)
+    assert query.endswith(question)
+    assert len(query) <= 3000
+    assert len(query.encode("utf-8")) <= 9000
+
+
+def test_retrieval_query_preserves_full_current_question_with_utf8_budget() -> None:
+    context = ConversationContext(
+        conversation_id=1,
+        messages=(ConversationContextMessage(MessageRole.USER, "历史" * 1300),),
+    )
+    question = "当前问题" * 200
+    query = context.retrieval_query(question, max_chars=3000, max_bytes=9000)
+    assert query.endswith(question)
+    assert len(query) <= 3000
+    assert len(query.encode("utf-8")) <= 9000
+
+
+def test_retrieval_query_uses_full_question_only_when_question_exceeds_budget() -> None:
+    context = ConversationContext(
+        conversation_id=1,
+        messages=(ConversationContextMessage(MessageRole.USER, "history"),),
+    )
+    question = "q" * 1001
+    assert context.retrieval_query(question, max_chars=1000, max_bytes=1000) == question

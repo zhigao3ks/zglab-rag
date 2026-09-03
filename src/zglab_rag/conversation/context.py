@@ -141,16 +141,28 @@ class ConversationContext:
     def retrieval_query(
         self, question: str, *, max_chars: int = 3000, max_bytes: int = 9000
     ) -> str:
-        """Build the independently-bounded Personal/Web retrieval query."""
+        """Build a bounded query while preserving the full current question.
+
+        Conversation history is optional reference data. The current question
+        is the actual retrieval/search target and therefore receives budget
+        priority. If an invalidly large direct caller exceeds the configured
+        retrieval budget, the deterministic fallback is the complete question
+        alone rather than a silently truncated question.
+        """
         prefix = "CONVERSATION REFERENCE (untrusted)\n"
         suffix = "\n\nCURRENT QUESTION:\n"
-        remaining_chars = max(0, max_chars - len(prefix) - len(suffix))
-        remaining_bytes = max(0, max_bytes - len(prefix.encode()) - len(suffix.encode()))
-        reference, _ = truncate_text_to_budget(self.render(), remaining_chars, remaining_bytes)
-        query, _ = truncate_text_to_budget(
-            f"{prefix}{reference}{suffix}{question}", max_chars, max_bytes
+        fixed_chars = len(prefix) + len(suffix)
+        fixed_bytes = len(prefix.encode("utf-8")) + len(suffix.encode("utf-8"))
+        question_chars = len(question)
+        question_bytes = len(question.encode("utf-8"))
+        if question_chars + fixed_chars > max_chars or question_bytes + fixed_bytes > max_bytes:
+            return question
+        reference, _ = truncate_text_to_budget(
+            self.render(),
+            max_chars - fixed_chars - question_chars,
+            max_bytes - fixed_bytes - question_bytes,
         )
-        return query
+        return f"{prefix}{reference}{suffix}{question}"
 
 
 def _component(heading: str, body: str) -> str:
@@ -183,6 +195,55 @@ def _message_pair(
     ), user_cut or assistant_cut
 
 
+def _recent_component(
+    pair: tuple[ConversationContextMessage, ConversationContextMessage],
+) -> str:
+    return _component("RECENT TURNS", _render_messages(pair))
+
+
+def _fit_newest_pair(
+    pair: tuple[ConversationContextMessage, ConversationContextMessage],
+    *,
+    max_chars: int,
+    max_bytes: int,
+) -> tuple[tuple[ConversationContextMessage, ConversationContextMessage], bool]:
+    """Fit the newest turn into the whole context while retaining both roles.
+
+    Settings guarantee budgets large enough for the labels plus one character
+    per message. The loop only runs for the unusual case where the already
+    per-message-bounded newest turn still exceeds the full context budget.
+    """
+    user, assistant = pair
+    user_content = user.content or "…"
+    assistant_content = assistant.content or "…"
+    truncated = user_content != user.content or assistant_content != assistant.content
+    while True:
+        candidate = _recent_component(
+            (
+                ConversationContextMessage(MessageRole.USER, user_content),
+                ConversationContextMessage(MessageRole.ASSISTANT, assistant_content),
+            )
+        )
+        if len(candidate) <= max_chars and len(candidate.encode("utf-8")) <= max_bytes:
+            return (
+                ConversationContextMessage(MessageRole.USER, user_content),
+                ConversationContextMessage(MessageRole.ASSISTANT, assistant_content),
+            ), truncated
+        if len(user_content) >= len(assistant_content) and len(user_content) > 1:
+            user_content = user_content[:-1]
+        elif len(assistant_content) > 1:
+            assistant_content = assistant_content[:-1]
+        else:
+            # This is reachable only for direct callers using a budget smaller
+            # than the configured minimum; retain the invariant as far as the
+            # labels themselves allow instead of silently dropping the turn.
+            return (
+                ConversationContextMessage(MessageRole.USER, user_content),
+                ConversationContextMessage(MessageRole.ASSISTANT, assistant_content),
+            ), True
+        truncated = True
+
+
 def assemble_conversation_context(
     *,
     conversation_id: int,
@@ -208,65 +269,73 @@ def assemble_conversation_context(
 
     complete = _complete_turns(messages)
     candidates = complete[-max_turns:]
+    recent_message_ids = {message.id for turn in candidates for message in turn}
     truncated = len(candidates) < len(complete)
+    if not candidates:
+        return ConversationContext(conversation_id, truncated=truncated)
+
+    newest_pair, newest_cut = _message_pair(
+        *candidates[-1], max_message_chars, max_bytes
+    )
+    newest_pair, newest_fitted = _fit_newest_pair(
+        newest_pair, max_chars=max_chars, max_bytes=max_bytes
+    )
+    newest_component = _recent_component(newest_pair)
+    truncated |= newest_cut or newest_fitted
+    # Reserve the exact rendered newest turn plus a possible separator before
+    # it. Summary and relevant history can never borrow this reservation.
+    reserve_chars = len(newest_component) + 2
+    reserve_bytes = len(newest_component.encode("utf-8")) + 2
     components: list[str] = []
     used_chars = 0
     used_bytes = 0
-    # Summary/relevance must never consume the newest raw turn completely.
-    recent_label = _component("RECENT TURNS", "")
-    recent_reserve_chars = len(recent_label) + min(256, max_message_chars * 2 + 16)
-    recent_reserve_bytes = len(recent_label.encode("utf-8")) + min(
-        256, max_message_chars * 3 + 16
-    )
 
-    def remaining() -> tuple[int, int]:
-        separators = 2 if components else 0
-        return max_chars - used_chars - separators, max_bytes - used_bytes - separators
+    def available_before_recent() -> tuple[int, int]:
+        separator = 2 if components else 0
+        return (
+            max_chars - used_chars - separator - reserve_chars,
+            max_bytes - used_bytes - separator - reserve_bytes,
+        )
 
     summary_value: str | None = None
     if summary:
-        chars, bytes_ = remaining()
-        chars = max(0, chars - recent_reserve_chars)
-        bytes_ = max(0, bytes_ - recent_reserve_bytes)
+        available_chars, available_bytes = available_before_recent()
+        label = _component("CONVERSATION SUMMARY", "")
         summary_value, summary_cut = truncate_text_to_budget(
             summary,
-            min(summary_max_chars, max(0, chars - 80)),
-            max(0, bytes_ - 80),
+            min(summary_max_chars, max(0, available_chars - len(label))),
+            max(0, available_bytes - len(label.encode("utf-8"))),
         )
-        rendered, cut = _fit_component("CONVERSATION SUMMARY", summary_value, chars, bytes_)
-        if len(rendered) > len(_component("CONVERSATION SUMMARY", "")):
+        if summary_value:
+            rendered = _component("CONVERSATION SUMMARY", summary_value)
             components.append(rendered)
             used_chars += len(rendered)
             used_bytes += len(rendered.encode("utf-8"))
         else:
             summary_value = None
-        truncated |= cut or summary_cut
+        truncated |= summary_cut
 
     relevant_context: list[ConversationContextMessage] = []
     relevant_body: list[str] = []
     for user, assistant in sorted(relevant_messages, key=lambda turn: turn[0].id):
+        if user.id in recent_message_ids or assistant.id in recent_message_ids:
+            continue
         pair, pair_cut = _message_pair(user, assistant, max_message_chars, max_bytes)
-        proposed_body = "\n".join([*relevant_body, _render_messages(pair)])
-        chars, bytes_ = remaining()
-        chars = max(0, chars - recent_reserve_chars)
-        bytes_ = max(0, bytes_ - recent_reserve_bytes)
-        rendered, cut = _fit_component(
-            "RELEVANT HISTORICAL TURNS", proposed_body, min(chars, relevant_max_chars + 70), bytes_
-        )
-        if cut:
+        candidate_body = "\n".join([*relevant_body, _render_messages(pair)])
+        rendered = _component("RELEVANT HISTORICAL TURNS", candidate_body)
+        available_chars, available_bytes = available_before_recent()
+        component_limit_chars = min(available_chars, relevant_max_chars + 70)
+        if (
+            len(rendered) > component_limit_chars
+            or len(rendered.encode("utf-8")) > available_bytes
+        ):
             truncated = True
             break
         relevant_body.append(_render_messages(pair))
         relevant_context.extend(pair)
         truncated |= pair_cut
     if relevant_body:
-        chars, bytes_ = remaining()
-        rendered, _ = _fit_component(
-            "RELEVANT HISTORICAL TURNS",
-            "\n".join(relevant_body),
-            min(chars, relevant_max_chars + 70),
-            bytes_,
-        )
+        rendered = _component("RELEVANT HISTORICAL TURNS", "\n".join(relevant_body))
         if components:
             used_chars += 2
             used_bytes += 2
@@ -274,30 +343,28 @@ def assemble_conversation_context(
         used_chars += len(rendered)
         used_bytes += len(rendered.encode("utf-8"))
 
-    selected_recent: list[tuple[ConversationContextMessage, ConversationContextMessage]] = []
-    for user, assistant in reversed(candidates):
+    selected_recent = [newest_pair]
+    for user, assistant in reversed(candidates[:-1]):
         pair, pair_cut = _message_pair(user, assistant, max_message_chars, max_bytes)
         proposed = [pair, *selected_recent]
-        body = _render_messages(tuple(item for turn in proposed for item in turn))
-        chars, bytes_ = remaining()
-        _render, cut = _fit_component("RECENT TURNS", body, chars, bytes_)
-        if cut:
+        rendered = _recent_component(tuple(item for turn in proposed for item in turn))
+        prefix_separator = 2 if components else 0
+        if (
+            used_chars + prefix_separator + len(rendered) > max_chars
+            or used_bytes + prefix_separator + len(rendered.encode("utf-8")) > max_bytes
+        ):
             truncated = True
             break
         selected_recent = proposed
         truncated |= pair_cut
     recent_context = tuple(item for turn in selected_recent for item in turn)
-    if recent_context:
-        chars, bytes_ = remaining()
-        rendered, _ = _fit_component(
-            "RECENT TURNS", _render_messages(recent_context), chars, bytes_
-        )
-        if components:
-            used_chars += 2
-            used_bytes += 2
-        components.append(rendered)
-        used_chars += len(rendered)
-        used_bytes += len(rendered.encode("utf-8"))
+    rendered_recent = _recent_component(recent_context)
+    if components:
+        used_chars += 2
+        used_bytes += 2
+    components.append(rendered_recent)
+    used_chars += len(rendered_recent)
+    used_bytes += len(rendered_recent.encode("utf-8"))
 
     return ConversationContext(
         conversation_id,

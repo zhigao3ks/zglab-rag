@@ -65,19 +65,22 @@ def _source_prompt(
     *,
     max_chars: int,
     max_bytes: int,
-) -> str:
+) -> tuple[str, list[tuple[Message, Message]]]:
+    """Build a bounded source and return only turns fully present in it."""
     parts: list[str] = []
     if existing_summary:
         parts.append(f"PREVIOUS SUMMARY (untrusted):\n{existing_summary}\n\n")
     parts.append("NEW COMPLETE TURNS (untrusted):\n")
     source, _ = truncate_text_to_budget("".join(parts), max_chars, max_bytes)
+    included: list[tuple[Message, Message]] = []
     for user, assistant in turns:
         turn = f"USER: {user.content}\nASSISTANT: {assistant.content}\n\n"
         candidate, cut = truncate_text_to_budget(source + turn, max_chars, max_bytes)
         if cut:
             break
         source = candidate
-    return source
+        included.append((user, assistant))
+    return source, included
 
 
 class ConversationSummaryService:
@@ -160,15 +163,23 @@ class ConversationSummaryService:
                 )
                 return False
             batch = eligible[: self._config.max_batch_turns]
+            source_prompt, included_turns = _source_prompt(
+                existing_content,
+                batch,
+                max_chars=self._config.source_max_chars,
+                max_bytes=self._config.source_max_bytes,
+            )
+            if not included_turns:
+                logger.info(
+                    "conversation_summary_refresh status=skipped conversation_id=%s "
+                    "reason=source_budget",
+                    conversation_id,
+                )
+                return False
             request = GenerationRequest(
                 question="Summarize the supplied conversation state.",
                 system_prompt=SUMMARY_SYSTEM_PROMPT,
-                user_prompt=_source_prompt(
-                    existing_content,
-                    batch,
-                    max_chars=self._config.source_max_chars,
-                    max_bytes=self._config.source_max_bytes,
-                ),
+                user_prompt=source_prompt,
                 allowed_evidence_ids=(),
             )
             response = self._provider.generate(request)
@@ -181,14 +192,14 @@ class ConversationSummaryService:
                 owner_user_id=owner_user_id,
                 conversation_id=conversation_id,
                 content=content,
-                covered_through_message_id=batch[-1][1].id,
+                covered_through_message_id=included_turns[-1][1].id,
             )
             logger.info(
                 "conversation_summary_refresh status=updated conversation_id=%s "
                 "covered_through_message_id=%s new_turn_count=%s",
                 conversation_id,
-                batch[-1][1].id,
-                len(batch),
+                included_turns[-1][1].id,
+                len(included_turns),
             )
             return True
         finally:
