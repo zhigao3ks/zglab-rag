@@ -171,6 +171,8 @@ def build_generation_service(
                 max_evidence_items=settings.generation_max_evidence_items,
                 max_context_chars=settings.generation_max_context_chars,
             ),
+            retrieval_query_max_chars=settings.conversation_context_retrieval_query_max_chars,
+            retrieval_query_max_bytes=settings.conversation_context_retrieval_query_max_bytes,
         ),
     )
 

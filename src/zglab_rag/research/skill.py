@@ -147,7 +147,11 @@ class WebResearchSkill:
         notify = _safe_research_progress(progress)
         question = request.question.strip()
         research_query = (
-            context.conversation_context.retrieval_query(question)
+            context.conversation_context.retrieval_query(
+                question,
+                max_chars=self._generation_config.retrieval_query_max_chars,
+                max_bytes=self._generation_config.retrieval_query_max_bytes,
+            )
             if context.conversation_context is not None
             else question
         )
@@ -297,5 +301,7 @@ def build_web_research_skill(settings: Settings, llm_provider) -> WebResearchSki
                 max_evidence_items=settings.generation_max_evidence_items,
                 max_context_chars=settings.generation_max_context_chars,
             ),
+            retrieval_query_max_chars=settings.conversation_context_retrieval_query_max_chars,
+            retrieval_query_max_bytes=settings.conversation_context_retrieval_query_max_bytes,
         ),
     )

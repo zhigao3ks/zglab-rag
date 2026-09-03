@@ -44,7 +44,7 @@ Phase 14    Agent Orchestrator                              ✅ SEALED
 
 UX Track     Frontend / Product Experience Stabilization   ✅ COMPLETE
 
-Phase 15    Conversation & Session Memory                   ← IN PROGRESS (15A/15B ✅, 15C NEXT)
+Phase 15    Conversation & Session Memory                   ← IN PROGRESS (15A/15B ✅, 15C IMPLEMENTED / awaiting production acceptance)
 Phase 16    Retrieval Intelligence & Knowledge Graph
 Phase 17    Agent Analyst
 Phase 18    Advanced Agent Autonomy / Bounded ReAct
@@ -304,17 +304,12 @@ conversation 的已完成 USER/ASSISTANT 轮次；以 newest-N 选择、按 chro
 均通过同一 `CapabilityContext` / `AgentRequest` 接收该 context；每一轮仍只使用本轮
 retrieval / Web evidence 生成 citation。没有 summary、历史语义检索或资源复用。
 
-### 15C — Context Compression
+### 15C — Context Compression ✅ IMPLEMENTED / awaiting production acceptance
 
-长会话需要：
-
-- recent turns；
-- conversation summary；
-- relevant historical turns；
-- token / byte budget；
-- deterministic truncation policy。
-
-Summary 是 conversation state，不等于 Personal Knowledge。
+已完成 summary、deterministic relevant historical turns、recent raw turns 与统一
+character / UTF-8 byte budget。Summary 是 conversation state，不等于 Personal
+Knowledge；它默认关闭、异步 fail-soft 生成，且所有 conversation state 都明确不是
+Evidence，不能进入 citation 或 AnswerSource。
 
 ### 15D — Session Resource Reuse
 

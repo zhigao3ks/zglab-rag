@@ -107,9 +107,16 @@ from zglab_rag.capabilities.errors import CapabilityTechnicalError
 from zglab_rag.capabilities.selection import AskMode, CapabilitySelection, select_capability
 from zglab_rag.config import Settings, get_settings
 from zglab_rag.conversation.context import ConversationContext, assemble_conversation_context
+from zglab_rag.conversation.coordinator import SummaryCoordinator
 from zglab_rag.conversation.database import ConversationDatabase, ConversationDatabaseError
 from zglab_rag.conversation.models import Conversation, Message, MessageRole
-from zglab_rag.conversation.repositories import ConversationRepository, MessageRepository
+from zglab_rag.conversation.relevance import select_relevant_turns
+from zglab_rag.conversation.repositories import (
+    ConversationRepository,
+    ConversationSummaryRepository,
+    MessageRepository,
+)
+from zglab_rag.conversation.summary import ConversationSummaryService, SummaryConfig
 from zglab_rag.generation.contracts import (
     GenerationResult,
     GenerationStatus,
@@ -192,6 +199,7 @@ def create_app(
         app.state.ready = False
         app.state.startup_error = None
         started = perf_counter()
+        summary_coordinator = None
         try:
             if app.state.runtime is None:
                 # Fail-fast production startup: load embedding model and validate
@@ -203,10 +211,36 @@ def create_app(
                 # cost-bearing capability, so an unavailable auth.db means
                 # the service is not ready.
                 app.state.auth_runtime.verify_ready()
-                # Conversation persistence has its own SQLite lifecycle and
-                # must fail fast independently of auth/index availability.
-                conversation_connection = app.state.conversation_database.connect(initialize=True)
-                conversation_connection.close()
+            # Conversation persistence has its own SQLite lifecycle and must
+            # initialize independently of the injected/production runtime.
+            conversation_connection = app.state.conversation_database.connect(initialize=True)
+            conversation_connection.close()
+
+            # Phase 15C: the optional coordinator is created for both real
+            # and dependency-injected runtimes so its lifecycle is testable.
+            if settings.conversation_summary_enabled:
+                provider = getattr(app.state.runtime, "llm_provider", None)
+                if provider is None:
+                    raise RuntimeError("summary enabled but runtime has no LLM provider")
+                summary_service = ConversationSummaryService(
+                    provider=provider,
+                    database=app.state.conversation_database,
+                    config=SummaryConfig(
+                        enabled=True,
+                        trigger_new_turns=settings.conversation_summary_trigger_new_turns,
+                        max_batch_turns=settings.conversation_summary_max_batch_turns,
+                        source_max_chars=settings.conversation_summary_source_max_chars,
+                        source_max_bytes=settings.conversation_summary_source_max_bytes,
+                        summary_max_chars=settings.conversation_summary_max_chars,
+                        recent_turns=settings.conversation_context_max_turns,
+                    ),
+                )
+                summary_coordinator = SummaryCoordinator(summary_service)
+                app.state.summary_coordinator = summary_coordinator
+                logger.info("summary_coordinator_initialized enabled=true")
+            else:
+                app.state.summary_coordinator = None
+                logger.info("summary_coordinator_initialized enabled=false")
             app.state.ready = True
             logger.info("runtime_ready startup_ms=%.3f", (perf_counter() - started) * 1000)
         except Exception:
@@ -217,6 +251,9 @@ def create_app(
             yield
         finally:
             app.state.ready = False
+            # Shutdown summary coordinator cleanly
+            if summary_coordinator is not None:
+                summary_coordinator.shutdown(wait=True)
             # Do not block process shutdown on timed-out generation tasks:
             # their slots are owned by the tasks themselves and the LLM
             # provider has its own timeout as a backstop.
@@ -303,14 +340,14 @@ def create_app(
         if request.method in ("POST", "PATCH") and (
             request.url.path.startswith("/api/v2/conversations")
             or request.url.path in (
-            "/api/v1/ask",
-            "/api/v1/ask/stream",
-            "/api/v2/ask",
-            "/api/v2/ask/stream",
-            "/api/v2/auth/login",
-            "/api/v2/auth/activate",
-            "/api/v2/auth/reset-password",
-            "/api/v2/auth/change-password",
+                "/api/v1/ask",
+                "/api/v1/ask/stream",
+                "/api/v2/ask",
+                "/api/v2/ask/stream",
+                "/api/v2/auth/login",
+                "/api/v2/auth/activate",
+                "/api/v2/auth/reset-password",
+                "/api/v2/auth/change-password",
             )
         ):
             content_length = request.headers.get("content-length")
@@ -886,24 +923,77 @@ def create_app(
             connection.close()
 
     def _load_conversation_context(
-        owner_user_id: int, conversation_id: int
+        owner_user_id: int, conversation_id: int, question: str
     ) -> ConversationContext | None:
-        """Load only bounded prior complete turns, owner-scoped in conversation.db."""
+        """Load three-tier context: summary + relevant historical + recent turns."""
         database: ConversationDatabase = app.state.conversation_database
         connection = database.connect(initialize=True)
         try:
             repository = ConversationRepository(connection)
             if repository.get(owner_user_id=owner_user_id, conversation_id=conversation_id) is None:
                 return None
-            messages = MessageRepository(connection).list_for_conversation(
-                owner_user_id=owner_user_id, conversation_id=conversation_id
+
+            message_repo = MessageRepository(connection)
+            summary_repo = ConversationSummaryRepository(connection)
+
+            # Load summary
+            summary_obj = summary_repo.get(
+                owner_user_id=owner_user_id,
+                conversation_id=conversation_id,
             )
+            summary_text = summary_obj.content if summary_obj else None
+
+            # Load bounded history for relevance scanning
+            history_limit = settings.conversation_context_history_scan_messages
+            all_messages = message_repo.list_bounded_for_conversation(
+                owner_user_id=owner_user_id,
+                conversation_id=conversation_id,
+                limit=history_limit,
+            )
+
+            # Select recent turns (newest complete turns)
+            recent_turns: list[tuple[Message, Message]] = []
+            i = 0
+            while i + 1 < len(all_messages):
+                user_msg = all_messages[i]
+                assistant_msg = all_messages[i + 1]
+                if (
+                    user_msg.role == MessageRole.USER
+                    and assistant_msg.role == MessageRole.ASSISTANT
+                ):
+                    recent_turns.append((user_msg, assistant_msg))
+                    i += 2
+                else:
+                    i += 1
+
+            # Take newest max_turns
+            recent_turns = recent_turns[-settings.conversation_context_max_turns :]
+            recent_message_ids = {
+                msg.id
+                for user_msg, assistant_msg in recent_turns
+                for msg in (user_msg, assistant_msg)
+            }
+
+            # Select relevant historical turns (excluding recent window)
+            relevant_turns = select_relevant_turns(
+                question=question,
+                messages=all_messages,
+                recent_message_ids=recent_message_ids,
+                max_turns=settings.conversation_context_relevant_turns,
+            )
+
+            # Assemble three-tier context
             return assemble_conversation_context(
                 conversation_id=conversation_id,
-                messages=messages,
+                messages=all_messages,
                 max_turns=settings.conversation_context_max_turns,
                 max_chars=settings.conversation_context_max_chars,
                 max_message_chars=settings.conversation_context_max_message_chars,
+                max_bytes=settings.conversation_context_max_bytes,
+                summary=summary_text,
+                summary_max_chars=settings.conversation_summary_max_chars,
+                relevant_messages=relevant_turns,
+                relevant_max_chars=settings.conversation_context_relevant_max_chars,
             )
         finally:
             connection.close()
@@ -991,12 +1081,13 @@ def create_app(
         principal: AuthenticatedPrincipal,
         conversation_id: int | None,
         request_id: str,
+        question: str,
     ) -> ConversationContext | JSONResponse | None:
         if conversation_id is None:
             return None
         try:
             context = await asyncio.to_thread(
-                _load_conversation_context, principal.user_id, conversation_id
+                _load_conversation_context, principal.user_id, conversation_id, question
             )
         except ConversationDatabaseError:
             logger.error("conversation_context_load_failed request_id=%s", request_id)
@@ -1009,11 +1100,16 @@ def create_app(
         if context is None:
             return _conversation_not_found(request_id)
         logger.info(
-            "request_id=%s conversation_context_turns=%s conversation_context_chars=%s "
+            "request_id=%s conversation_context_summary_present=%s "
+            "conversation_context_relevant_turns=%s conversation_context_recent_turns=%s "
+            "conversation_context_chars=%s conversation_context_bytes=%s "
             "conversation_context_truncated=%s",
             request_id,
-            context.turn_count,
+            context.summary is not None,
+            context.relevant_turn_count,
+            context.recent_turn_count,
             context.char_count,
+            context.byte_count,
             context.truncated,
         )
         # Keep legacy single-turn service doubles and runtime calls exactly
@@ -1035,6 +1131,15 @@ def create_app(
             # A separate owner session may delete the conversation while an
             # admitted generation is running. Never recreate or disclose it.
             logger.info("conversation_deleted_before_assistant_persist")
+            return
+
+        # Phase 15C: Schedule async summary refresh after successful ASSISTANT turn
+        coordinator: SummaryCoordinator | None = getattr(app.state, "summary_coordinator", None)
+        if coordinator is not None and settings.conversation_summary_enabled:
+            coordinator.schedule(
+                owner_user_id=principal.user_id,
+                conversation_id=conversation_id,
+            )
 
     @app.post("/api/v2/conversations", response_model=ConversationPublic, status_code=201)
     async def create_conversation(request: Request, body: ConversationTitleRequest):
@@ -1409,7 +1514,7 @@ def create_app(
             "explicit_agent" if is_agent else selection.reason.value,
         )
         conversation_context = await _conversation_context_for_request(
-            principal, body.conversation_id, request_id
+            principal, body.conversation_id, request_id, body.question
         )
         if isinstance(conversation_context, JSONResponse):
             return conversation_context
@@ -1571,7 +1676,7 @@ def create_app(
             "explicit_agent" if is_agent else selection.reason.value,
         )
         conversation_context = await _conversation_context_for_request(
-            principal, body.conversation_id, request_id
+            principal, body.conversation_id, request_id, body.question
         )
         if isinstance(conversation_context, JSONResponse):
             return conversation_context

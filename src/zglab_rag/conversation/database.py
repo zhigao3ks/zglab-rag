@@ -6,7 +6,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-CONVERSATION_SCHEMA_VERSION = 1
+CONVERSATION_SCHEMA_VERSION = 2
 
 CONVERSATION_SCHEMA = """
 CREATE TABLE schema_metadata (
@@ -34,6 +34,17 @@ CREATE TABLE messages (
 );
 CREATE INDEX messages_conversation_created_idx
     ON messages(conversation_id, created_at ASC, id ASC);
+
+CREATE TABLE conversation_summaries (
+    conversation_id INTEGER PRIMARY KEY,
+    content TEXT NOT NULL,
+    covered_through_message_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(conversation_id)
+        REFERENCES conversations(id)
+        ON DELETE CASCADE
+);
 """
 
 
@@ -111,11 +122,47 @@ class ConversationDatabase:
             raise ConversationDatabaseError(
                 f"Invalid conversation schema_version: {row[0]!r}"
             ) from exc
+
+        # Migration path: v1 → v2
+        if version == 1:
+            ConversationDatabase._migrate_v1_to_v2(connection)
+            version = 2
+
         if version != CONVERSATION_SCHEMA_VERSION:
             raise ConversationDatabaseError(
                 "Unsupported conversation schema version "
                 f"{version}; expected {CONVERSATION_SCHEMA_VERSION}"
             )
+
+    @staticmethod
+    def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
+        """Atomic migration from v1 to v2: add conversation_summaries table."""
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+
+            # Create the new table
+            connection.execute("""
+                CREATE TABLE conversation_summaries (
+                    conversation_id INTEGER PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    covered_through_message_id INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(conversation_id)
+                        REFERENCES conversations(id)
+                        ON DELETE CASCADE
+                )
+            """)
+
+            # Update schema version
+            connection.execute(
+                "UPDATE schema_metadata SET value=? WHERE key='schema_version'", (str(2),)
+            )
+
+            connection.commit()
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise ConversationDatabaseError(f"Migration from v1 to v2 failed: {exc}") from exc
 
     @staticmethod
     def schema_version(connection: sqlite3.Connection) -> int:

@@ -28,3 +28,14 @@ class Message:
     role: MessageRole
     content: str
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationSummary:
+    """Compressed conversation state — never Evidence, never a Source."""
+
+    conversation_id: int
+    content: str
+    covered_through_message_id: int
+    created_at: datetime
+    updated_at: datetime

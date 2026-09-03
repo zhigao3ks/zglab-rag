@@ -9,6 +9,7 @@ from tests.test_conversation_api import create_conversation
 from zglab_rag.conversation.context import assemble_conversation_context
 from zglab_rag.conversation.database import ConversationDatabase
 from zglab_rag.conversation.models import Message, MessageRole
+from zglab_rag.conversation.relevance import select_relevant_turns
 from zglab_rag.conversation.repositories import MessageRepository
 
 
@@ -33,7 +34,7 @@ def test_context_assembly_keeps_complete_recent_turns_in_chronological_order() -
             _message(5, MessageRole.USER, "dangling failure"),
         ],
         max_turns=2,
-        max_chars=100,
+        max_chars=300,
         max_message_chars=30,
     )
     assert [message.content for message in context.messages] == [
@@ -43,6 +44,8 @@ def test_context_assembly_keeps_complete_recent_turns_in_chronological_order() -
         "recent answer",
     ]
     assert context.turn_count == 2
+    assert "RECENT TURNS" in context.render()
+    assert "not evidence" in context.render()
     assert context.truncated is False
 
 
@@ -56,13 +59,13 @@ def test_context_assembly_is_bounded_and_deterministic() -> None:
         _message(6, MessageRole.ASSISTANT, "f" * 10),
     ]
     first = assemble_conversation_context(
-        conversation_id=1, messages=messages, max_turns=2, max_chars=45, max_message_chars=20
+        conversation_id=1, messages=messages, max_turns=2, max_chars=120, max_message_chars=20
     )
     second = assemble_conversation_context(
-        conversation_id=1, messages=messages, max_turns=2, max_chars=45, max_message_chars=20
+        conversation_id=1, messages=messages, max_turns=2, max_chars=120, max_message_chars=20
     )
     assert first == second
-    assert first.char_count <= 45
+    assert first.char_count <= 120
     assert first.turn_count == 1
     assert [item.content for item in first.messages] == ["e" * 10, "f" * 10]
     assert first.truncated is True
@@ -97,7 +100,8 @@ def test_ask_and_sse_receive_only_previous_complete_owner_scoped_context(tmp_pat
     assert response.status_code == 200
     context = runtime.service.last_conversation_context
     assert context is not None
-    assert context.render() == "USER: embedding?\nASSISTANT: BGE-small"
+    assert "RECENT TURNS" in context.render()
+    assert "USER: embedding?\nASSISTANT: BGE-small" in context.render()
     assert "那它和 E5 比较呢？" not in context.render()
 
     stream = client.post(
@@ -112,8 +116,66 @@ def test_ask_and_sse_receive_only_previous_complete_owner_scoped_context(tmp_pat
 
 def test_no_conversation_keeps_single_turn_service_contract(tmp_path) -> None:
     client, _app, _settings, _auth, runtime, csrf = authed_client(tmp_path)
-    response = client.post(
-        ASK_URL, json={"question": "independent"}, headers=ask_headers(csrf)
-    )
+    response = client.post(ASK_URL, json={"question": "independent"}, headers=ask_headers(csrf))
     assert response.status_code == 200
     assert runtime.service.last_conversation_context is None
+
+
+def test_context_relevance_is_deterministic_nonduplicating_and_utf8_bounded() -> None:
+    messages = [
+        _message(1, MessageRole.USER, "讨论 Python 发布计划"),
+        _message(2, MessageRole.ASSISTANT, "Python 计划在这里"),
+        _message(3, MessageRole.USER, "无关的旅行安排"),
+        _message(4, MessageRole.ASSISTANT, "无关回答"),
+        _message(5, MessageRole.USER, "最近的 Python 讨论"),
+        _message(6, MessageRole.ASSISTANT, "recent answer"),
+    ]
+    relevant = select_relevant_turns(
+        question="Python 发布是什么？",
+        messages=messages,
+        recent_message_ids={5, 6},
+        max_turns=2,
+    )
+    assert [(user.id, assistant.id) for user, assistant in relevant] == [(1, 2)]
+    context = assemble_conversation_context(
+        conversation_id=1,
+        messages=messages,
+        max_turns=1,
+        max_chars=800,
+        max_message_chars=100,
+        max_bytes=800,
+        summary="中文摘要" * 40,
+        summary_max_chars=80,
+        relevant_messages=relevant,
+        relevant_max_chars=80,
+    )
+    rendered = context.render()
+    assert "CONVERSATION SUMMARY" in rendered
+    assert "RELEVANT HISTORICAL TURNS" in rendered
+    assert "RECENT TURNS" in rendered
+    assert len(rendered) <= 800
+    assert len(rendered.encode("utf-8")) <= 800
+    query = context.retrieval_query("中文问题", max_chars=120, max_bytes=120)
+    assert len(query) <= 120
+    assert len(query.encode("utf-8")) <= 120
+
+
+def test_summary_cannot_displace_newest_complete_turn() -> None:
+    context = assemble_conversation_context(
+        conversation_id=1,
+        messages=[
+            _message(1, MessageRole.USER, "latest user"),
+            _message(2, MessageRole.ASSISTANT, "latest assistant"),
+        ],
+        max_turns=4,
+        max_chars=250,
+        max_message_chars=100,
+        max_bytes=750,
+        summary="summary " * 100,
+        summary_max_chars=1600,
+    )
+    assert [message.content for message in context.recent_messages] == [
+        "latest user",
+        "latest assistant",
+    ]
+    assert context.truncated

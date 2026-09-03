@@ -45,6 +45,9 @@ class GroundedGenerationConfig(BaseModel):
     retrieval_top_k: int = Field(default=5, ge=1, le=8)
     max_repair_attempts: int = Field(default=1, ge=0, le=1)
     budget: ContextBudget = Field(default_factory=ContextBudget)
+    # Phase 15C: retrieval query budget (independent from context budget)
+    retrieval_query_max_chars: int = Field(default=3000, ge=500, le=8000)
+    retrieval_query_max_bytes: int = Field(default=9000, ge=1500, le=24000)
 
 
 def render_claims_answer(claims: Sequence[GeneratedClaim]) -> str:
@@ -251,7 +254,11 @@ class GroundedAnswerService:
         retrieval_started = perf_counter()
         try:
             retrieval_query = (
-                conversation_context.retrieval_query(question)
+                conversation_context.retrieval_query(
+                    question,
+                    max_chars=self.config.retrieval_query_max_chars,
+                    max_bytes=self.config.retrieval_query_max_bytes,
+                )
                 if conversation_context is not None
                 else question
             )

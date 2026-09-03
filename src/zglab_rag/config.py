@@ -99,11 +99,30 @@ class Settings(BaseSettings):
     # Phase 15A1 storage foundation. This path is intentionally not wired
     # into API/runtime behavior until a later explicitly authorized slice.
     conversation_database_path: Path = Path("runtime/conversation.db")
-    # Phase 15B: bounded recent completed turns only. No summary, semantic
-    # retrieval, cache, or long-term memory is part of these limits.
+
+    # Phase 15B: bounded recent completed turns only.
+    # Phase 15C: extended with summary + relevant historical + unified byte budget.
     conversation_context_max_turns: int = Field(default=4, ge=1, le=12)
     conversation_context_max_chars: int = Field(default=6000, ge=200, le=24000)
     conversation_context_max_message_chars: int = Field(default=2000, ge=100, le=8000)
+    conversation_context_max_bytes: int = Field(default=18000, ge=1000, le=72000)
+
+    # Relevant historical turns (Phase 15C)
+    conversation_context_relevant_turns: int = Field(default=2, ge=0, le=8)
+    conversation_context_relevant_max_chars: int = Field(default=1200, ge=0, le=4800)
+    conversation_context_history_scan_messages: int = Field(default=160, ge=20, le=800)
+
+    # Retrieval query budget (Phase 15C)
+    conversation_context_retrieval_query_max_chars: int = Field(default=3000, ge=500, le=8000)
+    conversation_context_retrieval_query_max_bytes: int = Field(default=9000, ge=1500, le=24000)
+
+    # Summary generation (Phase 15C)
+    conversation_summary_enabled: bool = False
+    conversation_summary_trigger_new_turns: int = Field(default=4, ge=2, le=16)
+    conversation_summary_max_batch_turns: int = Field(default=8, ge=2, le=32)
+    conversation_summary_source_max_chars: int = Field(default=12000, ge=2000, le=32000)
+    conversation_summary_source_max_bytes: int = Field(default=36000, ge=6000, le=96000)
+    conversation_summary_max_chars: int = Field(default=1600, ge=200, le=4000)
     # Public origin used to build activation URLs in CLI output and to
     # validate Origin/Referer headers; set to https://ask.zglab.fun in prod.
     auth_public_base_url: str = "http://localhost:8000"

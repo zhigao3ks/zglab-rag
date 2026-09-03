@@ -1,17 +1,15 @@
-# Phase 15B — Multi-turn Context
+# Conversation Context（Phase 15C）
 
-`conversation_id` 仅由 authenticated principal 与服务端 `conversation.db` 共同解析。客户端不能上传 history、role、owner 或 assembled prompt。
+每个带 `conversation_id` 的请求，在 capability selection 之后只创建一个服务端派生的 `ConversationContext` 快照，并复用于 Personal、Web 和 Agent 路径。客户端不能提交 history，历史也不会影响 AUTO Router、认证、配额、Agent plan、MCP allowlist 或任何权限判断。
 
-## 有界装配
+上下文由三个明确标记为不可信、非 Evidence 的层组成：
 
-默认限制：最多 4 个完整轮次、6000 个字符、每条消息 2000 个字符。装配器只接受稳定排序的同一会话消息，丢弃 dangling USER 等不完整轮次；从最新完整轮次向前选择，再按时间顺序渲染。当前问题在 context snapshot 后才持久化，因此不会重复出现。
+1. 已持久化的 Conversation Summary；
+2. 与当前问题 lexical overlap 为正的历史完整 turn；
+3. newest-N 个完整 recent turn（默认 4）。
 
-`conversation_id=null` 不加载 context，保持原有单轮调用路径。
+历史相关性不使用 LLM、Embedding、BGE、向量索引或 BM25。它先执行 Unicode NFKC 与小写化，再对 Latin/alphanumeric token 和 CJK bigram 计算交集；分数降序、同分时较新的 turn 优先，最终按时间顺序渲染。recent turn 不会同时作为 relevant turn 出现，dangling USER 会被排除。
 
-## 信任边界
+最终 prompt 中每个层都有 `not evidence` 标签。它们没有 Evidence ID，不能进入 `allowed_evidence_ids`、AnswerSource 或 citation，因此不能单独支撑事实性 claim。
 
-Conversation Context 是低信任的 reference-resolution data：可帮助 Personal retrieval、Web search 与 grounded generation 理解指代；它不是 Evidence、citation/source、system instruction 或 Agent plan。所有事实仍只能由本轮 Personal retrieval 或本轮 Web research evidence 支撑。
-
-历史文本不能改变 capability selection、Auth、quota、concurrency、Agent step budget 或 MCP allowlist。不会通过公开 API、SSE、日志或错误响应输出其正文；日志只记录 turn/char/truncated 计数。
-
-本阶段不含 summary、semantic history retrieval、embedding/vector index、Web/retrieval evidence reuse、tool-result reuse、cache 或 long-term memory；这些属于 15C/15D 及后续阶段。
+渲染同时受字符与 UTF-8 byte 的硬上限约束（默认 6000 chars / 18000 bytes），标签也计入预算。摘要和相关历史各有独立上限；recent 使用剩余预算并优先尝试保留最新的完整 turn。检索/search query 使用独立预算（默认 3000 chars / 9000 bytes），格式为 `CONVERSATION REFERENCE (untrusted)` 加 `CURRENT QUESTION`，不会无条件复制整个生成上下文。
