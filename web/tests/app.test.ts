@@ -119,7 +119,7 @@ describe("empty state", () => {
     expect(workspace.find('[data-testid="message-scroller"]').exists()).toBe(true);
     const empty = wrapper.find('[data-testid="empty-state"]');
     expect(empty.exists()).toBe(true);
-    expect(empty.text()).toContain("ZGLab AI Assistant");
+    expect(empty.text()).toContain("ZGLab Personal AI Agent");
     const examples = wrapper.findAll(".conversation__example-button");
     expect(examples.length).toBeGreaterThanOrEqual(3);
     expect(examples[0].text()).toBe("ZGLab Personal AI Agent 当前有哪些核心能力？");
@@ -133,6 +133,11 @@ describe("empty state", () => {
     expect(askStreamMock).toHaveBeenCalledTimes(1);
     expect(askStreamMock.mock.calls[0][0]).toBe("ZGLab Personal AI Agent 当前有哪些核心能力？");
     expect(wrapper.find('[data-testid="answer-text"]').text()).toBe("这是回答。");
+  });
+
+  it("renders the unified product title in the assistant header", () => {
+    const wrapper = mountAssistant();
+    expect(wrapper.find(".assistant-header__title").text()).toBe("ZGLab Personal AI Agent");
   });
 });
 

@@ -23,7 +23,7 @@ const EXAMPLE_PROMPTS = [
 <template>
   <section class="conversation" aria-label="对话记录">
     <div v-if="!hasConversation" class="conversation__empty" data-testid="empty-state">
-      <h2 class="conversation__empty-title">ZGLab AI Assistant</h2>
+      <h2 class="conversation__empty-title">ZGLab Personal AI Agent</h2>
       <p class="conversation__empty-intro">
         我会基于公开、可追溯的知识源回答问题，并给出来源。试着问我：
       </p>

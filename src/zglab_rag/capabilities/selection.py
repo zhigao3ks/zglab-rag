@@ -86,13 +86,9 @@ _CURRENT_INFORMATION_MARKERS = (
     "最近",
     "今天",
     "昨天",
-    "当前",
-    "目前",
-    "现状",
     "最新发布",
     "最近发布",
     "latest",
-    "current",
     "current version",
 )
 

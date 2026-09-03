@@ -79,16 +79,34 @@ class TestAutoSelection:
         [
             "Python 最新版本是什么？",
             "某个开源项目最近有什么更新？",
-            "HTTP/3 标准目前的状态如何？",
             "今天有什么技术新闻？",
             "What is the latest release of FastAPI?",
-            "What is the current stable release of Python?",
+            "what is the current version of Python?",
+            "今天 OpenAI 有什么最新消息？",
+            "最近发布了哪些新的大模型？",
+            "最新发布的 GPT 模型是什么？",
         ],
     )
     def test_current_information_goes_web(self, question: str) -> None:
         selection = _select(question)
         assert selection.capability_id == WEB_RESEARCH_CAPABILITY_ID
         assert selection.reason == SelectionReason.CURRENT_INFORMATION
+
+    @pytest.mark.parametrize(
+        "question",
+        [
+            "ZGLab Personal AI Agent 当前有哪些核心能力？",
+            "Agentic 项目目前有哪些能力？",
+            "medical-multi-agent-system 当前是什么架构？",
+            "这个项目现状如何？",
+        ],
+    )
+    def test_weak_time_markers_stay_personal(self, question: str) -> None:
+        # "当前", "目前", "现状" alone are insufficient to prove the user
+        # needs public latest information; the authoritative answer lives
+        # in indexed Personal Knowledge.
+        selection = _select(question)
+        assert selection.capability_id == PERSONAL_KNOWLEDGE_CAPABILITY_ID
 
     @pytest.mark.parametrize(
         "question",

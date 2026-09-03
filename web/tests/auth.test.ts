@@ -66,15 +66,36 @@ afterEach(() => {
 });
 
 describe("landing (public, anonymous)", () => {
-  it("shows capability cards and a login entry", async () => {
+  it("shows the product title, capability cards and a login entry", async () => {
     const router = await makeRouter();
     const wrapper = mount(LandingView, { global: { plugins: [router] } });
+
+    // Product title is unified across the landing page.
+    expect(wrapper.find(".landing__title").text()).toBe("ZGLab Personal AI Agent");
+
     const grid = wrapper.find('[data-testid="capability-grid"]');
     expect(grid.exists()).toBe(true);
-    expect(grid.text()).toContain("Personal Knowledge");
-    expect(grid.text()).toContain("Web Research");
-    expect(grid.text()).toContain("已上线");
-    expect(grid.text()).not.toContain("planned");
+
+    // All 6 capability cards present.
+    const cards = wrapper.findAll(".landing__card");
+    expect(cards.length).toBe(6);
+
+    // Each live capability is labelled 已上线.
+    const gridText = grid.text();
+    expect(gridText).toContain("Personal Knowledge RAG");
+    expect(gridText).toContain("Web Research");
+    expect(gridText).toContain("MCP Tools");
+    expect(gridText).toContain("Agent Orchestration");
+    expect(gridText).toContain("Conversation Memory");
+    expect(gridText).toContain("Evidence Grounding & Citation Validation");
+    expect(gridText).toContain("已上线");
+    expect(gridText).not.toContain("planned");
+
+    // Do not claim unimplemented capabilities are live.
+    const pageText = wrapper.text();
+    expect(pageText).not.toContain("Phase 15C");
+    expect(pageText).not.toMatch(/compression.*已上线/);
+
     expect(wrapper.find('[data-testid="landing-login"]').exists()).toBe(true);
   });
 });

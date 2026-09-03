@@ -3,12 +3,12 @@ import { router } from "../router";
 import { isAuthenticated } from "../auth/store";
 
 const capabilities = [
-  { title: "Personal Knowledge", text: "检索公开项目、技术笔记与知识卡，并返回可追溯的来源。" },
-  { title: "Evidence Grounding", text: "回答只使用可验证的证据；信息不足时会明确说明。" },
-  { title: "Citation Validation", text: "生成后核验引用，避免把没有来源的推测当作事实。" },
-  { title: "Web Research", text: "按需检索公开网页，保留来源链接并与个人知识区分展示。" },
-  { title: "MCP Tools", text: "通过受控的确定性工具完成适合工具处理的任务。" },
-  { title: "Agent Orchestration", text: "在明确授权和边界内组合知识、联网研究与工具能力。" },
+  { title: "Personal Knowledge RAG", text: "基于公开的个人知识、项目与技术资料进行检索和回答。" },
+  { title: "Web Research", text: "在受控安全边界内检索公开网络信息，并形成可验证的外部证据。" },
+  { title: "MCP Tools", text: "通过 MCP 调用经过允许的确定性工具，并保持明确的工具授权边界。" },
+  { title: "Agent Orchestration", text: "在预算、步骤数与权限约束下组合 Personal、Web 与 Tool 能力。" },
+  { title: "Conversation Memory", text: "保存会话历史，并使用有界的近期完整对话支持多轮上下文。" },
+  { title: "Evidence Grounding & Citation Validation", text: "事实性回答必须基于 Evidence，并在生成后验证引用与事实来源。" },
 ];
 
 function goLogin(): void {
@@ -43,9 +43,9 @@ function goLogin(): void {
     </header>
 
     <main class="landing__main">
-      <h1 class="landing__title">ZGLab AI Assistant</h1>
+      <h1 class="landing__title">ZGLab Personal AI Agent</h1>
       <p class="landing__subtitle">
-        基于公开、可追溯知识源的 AI 工作台。登录后可使用个人知识、联网研究、受控工具与 Agent 协作能力。
+        基于个人公开知识、网络研究、受控工具与 Agent 编排的个人 AI 助手；事实性回答坚持 Evidence First，并提供可追溯来源。
       </p>
 
       <section class="landing__grid" data-testid="capability-grid">
