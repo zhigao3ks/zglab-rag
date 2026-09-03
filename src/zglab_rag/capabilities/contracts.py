@@ -23,6 +23,7 @@ from typing import Protocol
 
 from zglab_rag.auth.models import AuthenticatedPrincipal
 from zglab_rag.conversation.context import ConversationContext
+from zglab_rag.conversation.resources import SessionWorkspaceProtocol
 from zglab_rag.generation.contracts import (
     EvidenceOrigin,
     GenerationResult,
@@ -100,6 +101,7 @@ class CapabilityContext:
     # Server-derived, low-trust reference data. It cannot select a capability,
     # alter policy, or become evidence/citations.
     conversation_context: ConversationContext | None = None
+    session_workspace: SessionWorkspaceProtocol | None = None
 
 
 @dataclass(frozen=True, slots=True)

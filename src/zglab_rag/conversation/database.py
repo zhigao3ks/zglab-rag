@@ -6,7 +6,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-CONVERSATION_SCHEMA_VERSION = 2
+CONVERSATION_SCHEMA_VERSION = 3
 
 CONVERSATION_SCHEMA = """
 CREATE TABLE schema_metadata (
@@ -45,6 +45,30 @@ CREATE TABLE conversation_summaries (
         REFERENCES conversations(id)
         ON DELETE CASCADE
 );
+
+CREATE TABLE session_resources (
+    id INTEGER PRIMARY KEY,
+    conversation_id INTEGER NOT NULL,
+    resource_type TEXT NOT NULL CHECK(resource_type IN (
+        'PERSONAL_RETRIEVAL', 'WEB_EVIDENCE', 'TOOL_RESULT'
+    )),
+    resource_key TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    provenance_json TEXT NOT NULL,
+    producer_fingerprint TEXT NOT NULL,
+    source_request_id TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    last_used_at TEXT NOT NULL,
+    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    UNIQUE(conversation_id, resource_type, resource_key)
+);
+CREATE INDEX session_resources_conversation_type_idx
+    ON session_resources(conversation_id, resource_type);
+CREATE INDEX session_resources_expires_at_idx ON session_resources(expires_at);
+CREATE INDEX session_resources_conversation_last_used_idx
+    ON session_resources(conversation_id, last_used_at, created_at, id);
 """
 
 
@@ -123,10 +147,14 @@ class ConversationDatabase:
                 f"Invalid conversation schema_version: {row[0]!r}"
             ) from exc
 
-        # Migration path: v1 → v2
+        # Migrations are deliberately sequential: every historical valid
+        # conversation database can be upgraded without rebuilding it.
         if version == 1:
             ConversationDatabase._migrate_v1_to_v2(connection)
             version = 2
+        if version == 2:
+            ConversationDatabase._migrate_v2_to_v3(connection)
+            version = 3
 
         if version != CONVERSATION_SCHEMA_VERSION:
             raise ConversationDatabaseError(
@@ -163,6 +191,44 @@ class ConversationDatabase:
         except sqlite3.Error as exc:
             connection.rollback()
             raise ConversationDatabaseError(f"Migration from v1 to v2 failed: {exc}") from exc
+
+    @staticmethod
+    def _migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+        """Atomically add the bounded, owner-scoped session workspace store."""
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executescript("""
+                CREATE TABLE session_resources (
+                    id INTEGER PRIMARY KEY,
+                    conversation_id INTEGER NOT NULL,
+                    resource_type TEXT NOT NULL CHECK(resource_type IN (
+                        'PERSONAL_RETRIEVAL', 'WEB_EVIDENCE', 'TOOL_RESULT'
+                    )),
+                    resource_key TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    provenance_json TEXT NOT NULL,
+                    producer_fingerprint TEXT NOT NULL,
+                    source_request_id TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    last_used_at TEXT NOT NULL,
+                    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+                    UNIQUE(conversation_id, resource_type, resource_key)
+                );
+                CREATE INDEX session_resources_conversation_type_idx
+                    ON session_resources(conversation_id, resource_type);
+                CREATE INDEX session_resources_expires_at_idx ON session_resources(expires_at);
+                CREATE INDEX session_resources_conversation_last_used_idx
+                    ON session_resources(conversation_id, last_used_at, created_at, id);
+            """)
+            connection.execute(
+                "UPDATE schema_metadata SET value=? WHERE key='schema_version'", ("3",)
+            )
+            connection.commit()
+        except sqlite3.Error as exc:
+            connection.rollback()
+            raise ConversationDatabaseError(f"Migration from v2 to v3 failed: {exc}") from exc
 
     @staticmethod
     def schema_version(connection: sqlite3.Connection) -> int:

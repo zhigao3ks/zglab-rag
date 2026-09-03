@@ -8,6 +8,7 @@ from enum import StrEnum
 from zglab_rag.auth.models import AuthenticatedPrincipal
 from zglab_rag.capabilities.contracts import CapabilityResult
 from zglab_rag.conversation.context import ConversationContext
+from zglab_rag.conversation.resources import SessionWorkspaceProtocol
 from zglab_rag.generation.contracts import AnswerSource
 
 
@@ -44,6 +45,7 @@ class AgentRequest:
     question: str
     principal: AuthenticatedPrincipal | None = None
     conversation_context: ConversationContext | None = None
+    session_workspace: SessionWorkspaceProtocol | None = None
 
 
 @dataclass(frozen=True, slots=True)

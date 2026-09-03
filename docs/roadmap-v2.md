@@ -44,7 +44,7 @@ Phase 14    Agent Orchestrator                              ✅ SEALED
 
 UX Track     Frontend / Product Experience Stabilization   ✅ COMPLETE
 
-Phase 15    Conversation & Session Memory                   ← IN PROGRESS (15A/15B ✅, 15C IMPLEMENTED / awaiting production acceptance)
+Phase 15    Conversation & Session Memory                   ← IMPLEMENTED / awaiting Phase 15D production acceptance
 Phase 16    Retrieval Intelligence & Knowledge Graph
 Phase 17    Agent Analyst
 Phase 18    Advanced Agent Autonomy / Bounded ReAct
@@ -311,7 +311,12 @@ character / UTF-8 byte budget。Summary 是 conversation state，不等于 Perso
 Knowledge；它默认关闭、异步 fail-soft 生成，且所有 conversation state 都明确不是
 Evidence，不能进入 citation 或 AnswerSource。
 
-### 15D — Session Resource Reuse
+### 15D — Session Resource Reuse ✅ IMPLEMENTED / awaiting production acceptance
+
+已实现 schema v3 的 owner/conversation-scoped typed Session Workspace：Personal retrieval、
+temporary Web evidence 与 deterministic tool results 均由 TTL、item/byte limits、provenance、
+fingerprint 与 deterministic LRU 约束。默认开关关闭，等待独立生产迁移与验收；详见
+`docs/session-resource-reuse.md`。不实现 generic object storage、conversation embedding 或长期记忆。
 
 Session 不只是聊天记录，也是短期工作空间：
 

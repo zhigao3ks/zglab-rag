@@ -39,3 +39,27 @@ class ConversationSummary:
     covered_through_message_id: int
     created_at: datetime
     updated_at: datetime
+
+
+class SessionResourceType(StrEnum):
+    """The only typed, bounded reuse resources supported by Phase 15D."""
+
+    PERSONAL_RETRIEVAL = "PERSONAL_RETRIEVAL"
+    WEB_EVIDENCE = "WEB_EVIDENCE"
+    TOOL_RESULT = "TOOL_RESULT"
+
+
+@dataclass(frozen=True, slots=True)
+class SessionResource:
+    id: int
+    conversation_id: int
+    resource_type: SessionResourceType
+    resource_key: str
+    payload_json: str
+    provenance_json: str
+    producer_fingerprint: str
+    source_request_id: str
+    size_bytes: int
+    created_at: datetime
+    expires_at: datetime
+    last_used_at: datetime

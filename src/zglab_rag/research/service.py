@@ -60,6 +60,10 @@ class ResearchService:
         self._fetcher = fetcher or SafeFetcher(self._budget)
         self._clock = clock
 
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
     def research(self, query: str, *, request_id: str = "") -> ResearchResult:
         started = self._clock()
         # Kill switch: fail closed before spending any search/fetch cost.

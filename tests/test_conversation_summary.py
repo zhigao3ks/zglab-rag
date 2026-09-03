@@ -97,7 +97,7 @@ def test_v1_migrates_to_v2_without_losing_conversation_or_messages(tmp_path: Pat
 
     migrated = ConversationDatabase(path).connect()
     try:
-        assert ConversationDatabase.schema_version(migrated) == 2
+        assert ConversationDatabase.schema_version(migrated) == 3
         persisted = migrated.execute("SELECT content FROM messages WHERE id=1").fetchone()
         assert persisted[0] == "preserved"
         assert migrated.execute(

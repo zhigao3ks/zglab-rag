@@ -7,6 +7,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from zglab_rag.conversation.context import ConversationContext
+from zglab_rag.conversation.models import SessionResourceType
+from zglab_rag.conversation.resources import (
+    PERSONAL_RESOURCE_VERSION,
+    SessionWorkspaceProtocol,
+    personal_resource_key,
+    resource_key,
+)
+from zglab_rag.domain.models import Visibility
 from zglab_rag.generation.citation import (
     CitationValidation,
     resolve_sources,
@@ -35,7 +43,7 @@ from zglab_rag.generation.errors import (
 )
 from zglab_rag.generation.persona import INSUFFICIENT_EVIDENCE_ANSWER
 from zglab_rag.generation.structured import parse_structured_answer
-from zglab_rag.retrieval.contracts import RetrievalQuery
+from zglab_rag.retrieval.contracts import RetrievalQuery, RetrievalResult
 
 RetrievalMode = Literal["vector", "reranked"]
 
@@ -244,6 +252,9 @@ class GroundedAnswerService:
         top_k: int | None = None,
         progress: ProgressCallback | None = None,
         conversation_context: ConversationContext | None = None,
+        session_workspace: SessionWorkspaceProtocol | None = None,
+        knowledge_snapshot_fingerprint: str | None = None,
+        request_id: str = "",
     ) -> GenerationResult:
         mode = retrieval_mode or self.config.retrieval_mode
         retrieval_top_k = top_k or self.config.retrieval_top_k
@@ -262,9 +273,67 @@ class GroundedAnswerService:
                 if conversation_context is not None
                 else question
             )
-            response = self.retriever.retrieve(
-                RetrievalQuery(text=retrieval_query, top_k=retrieval_top_k)
-            )
+            cache_key = None
+            cache_fingerprint = None
+            cached_results: list[RetrievalResult] | None = None
+            if session_workspace is not None and knowledge_snapshot_fingerprint is not None:
+                cache_fingerprint = resource_key(
+                    {
+                        "mode": mode,
+                        "top_k": retrieval_top_k,
+                        "config": self.config.model_dump(mode="json"),
+                    }
+                )
+                cache_key = personal_resource_key(
+                    query=retrieval_query,
+                    mode=mode,
+                    top_k=retrieval_top_k,
+                    snapshot=knowledge_snapshot_fingerprint,
+                    config=cache_fingerprint,
+                )
+                cached = session_workspace.get(
+                    SessionResourceType.PERSONAL_RETRIEVAL,
+                    cache_key,
+                    producer_fingerprint=cache_fingerprint,
+                )
+                if cached is not None:
+                    try:
+                        values = cached["results"]
+                        hydrated = [RetrievalResult.model_validate(value) for value in values]
+                        if any(item.visibility != Visibility.PUBLIC for item in hydrated):
+                            raise ValueError("non-public cached retrieval")
+                        cached_results = hydrated
+                    except (KeyError, TypeError, ValueError):
+                        cached_results = None
+            if cached_results is None:
+                response = self.retriever.retrieve(
+                    RetrievalQuery(text=retrieval_query, top_k=retrieval_top_k)
+                )
+                results = response.results
+                if (
+                    cache_key is not None
+                    and cache_fingerprint is not None
+                    and results
+                    and all(item.visibility == Visibility.PUBLIC for item in results)
+                ):
+                    session_workspace.put(
+                        SessionResourceType.PERSONAL_RETRIEVAL,
+                        cache_key,
+                        payload={
+                            "version": PERSONAL_RESOURCE_VERSION,
+                            "results": [item.model_dump(mode="json") for item in results],
+                        },
+                        provenance={
+                            "knowledge_snapshot": knowledge_snapshot_fingerprint,
+                            "retrieval_mode": mode,
+                            "top_k": retrieval_top_k,
+                        },
+                        producer_fingerprint=cache_fingerprint,
+                        source_request_id=request_id,
+                        ttl_seconds=getattr(session_workspace, "personal_ttl_seconds", 21600),
+                    )
+            else:
+                results = cached_results
         except GenerationError:
             raise
         except Exception as exc:
@@ -272,7 +341,7 @@ class GroundedAnswerService:
         retrieval_ms = (perf_counter() - retrieval_started) * 1000
 
         context = self.context_builder.build(
-            question, response.results, conversation_context=conversation_context
+            question, results, conversation_context=conversation_context
         )
         if not context.evidence:
             # Personal-specific early exit kept verbatim (failure_reason and

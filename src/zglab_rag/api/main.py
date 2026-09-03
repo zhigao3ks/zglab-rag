@@ -116,6 +116,7 @@ from zglab_rag.conversation.repositories import (
     ConversationSummaryRepository,
     MessageRepository,
 )
+from zglab_rag.conversation.resources import SessionWorkspace
 from zglab_rag.conversation.summary import ConversationSummaryService, SummaryConfig
 from zglab_rag.generation.contracts import (
     GenerationResult,
@@ -339,7 +340,8 @@ def create_app(
         # Only apply to the cost-bearing / credential-carrying endpoints
         if request.method in ("POST", "PATCH") and (
             request.url.path.startswith("/api/v2/conversations")
-            or request.url.path in (
+            or request.url.path
+            in (
                 "/api/v1/ask",
                 "/api/v1/ask/stream",
                 "/api/v2/ask",
@@ -414,8 +416,12 @@ def create_app(
         query: bool,
     ) -> InternalEmbeddingResponse | Response:
         configured = settings.internal_embedding_token
-        if configured is None or token is None or not hmac.compare_digest(
-            token.encode("utf-8"), configured.get_secret_value().encode("utf-8")
+        if (
+            configured is None
+            or token is None
+            or not hmac.compare_digest(
+                token.encode("utf-8"), configured.get_secret_value().encode("utf-8")
+            )
         ):
             # Hide the existence of the internal capability from untrusted callers.
             return Response(status_code=404)
@@ -1116,6 +1122,24 @@ def create_app(
         # unchanged when no completed prior turn exists.
         return None if context.is_empty else context
 
+    def _session_workspace_for_request(
+        principal: AuthenticatedPrincipal, conversation_id: int | None
+    ) -> SessionWorkspace | None:
+        if conversation_id is None or not settings.session_resource_reuse_enabled:
+            return None
+        return SessionWorkspace(
+            database=app.state.conversation_database,
+            owner_user_id=principal.user_id,
+            conversation_id=conversation_id,
+            enabled=True,
+            max_items=settings.session_resource_max_items,
+            max_bytes=settings.session_resource_max_bytes,
+            max_item_bytes=settings.session_resource_max_item_bytes,
+            personal_ttl_seconds=settings.session_personal_ttl_seconds,
+            web_ttl_seconds=settings.session_web_ttl_seconds,
+            tool_ttl_seconds=settings.session_tool_ttl_seconds,
+        )
+
     def _persist_assistant_answer(
         principal: AuthenticatedPrincipal,
         conversation_id: int,
@@ -1518,6 +1542,7 @@ def create_app(
         )
         if isinstance(conversation_context, JSONResponse):
             return conversation_context
+        session_workspace = _session_workspace_for_request(principal, body.conversation_id)
 
         try:
             guard.acquire()
@@ -1598,6 +1623,7 @@ def create_app(
                 request_id=request_id,
                 principal=principal,
                 conversation_context=conversation_context,
+                session_workspace=session_workspace,
             )
         except RuntimeError:
             # Shutdown race: refund the quota, the work never started.
@@ -1680,6 +1706,7 @@ def create_app(
         )
         if isinstance(conversation_context, JSONResponse):
             return conversation_context
+        session_workspace = _session_workspace_for_request(principal, body.conversation_id)
 
         try:
             guard.acquire()
@@ -1758,16 +1785,17 @@ def create_app(
             on_submit_failure=_refund_quota,
             principal=principal,
             conversation_context=conversation_context,
+            session_workspace=session_workspace,
             execute=_execute_agent
             if is_agent
             else (_execute_web_generation if is_web else _execute_generation),
             extra_done_guards=held_guards[1:],
             on_business_result=(
-                lambda response: _persist_assistant_answer(
-                    principal, body.conversation_id, response
+                lambda response: (
+                    _persist_assistant_answer(principal, body.conversation_id, response)
+                    if body.conversation_id is not None
+                    else None
                 )
-                if body.conversation_id is not None
-                else None
             ),
         )
 
@@ -1913,6 +1941,7 @@ def _execute_generation(
     request_id: str = "",
     principal: AuthenticatedPrincipal | None = None,
     conversation_context: ConversationContext | None = None,
+    session_workspace: SessionWorkspace | None = None,
 ) -> GenerationResult:
     """Execute the blocking generation call through the capability boundary.
 
@@ -1932,6 +1961,7 @@ def _execute_generation(
         request_id=request_id,
         principal=principal,
         conversation_context=conversation_context,
+        session_workspace=session_workspace,
     )
     try:
         result = skill.execute(CapabilityRequest(question=question), context, progress=progress)
@@ -1949,6 +1979,7 @@ def _execute_web_generation(
     request_id: str = "",
     principal: AuthenticatedPrincipal | None = None,
     conversation_context: ConversationContext | None = None,
+    session_workspace: SessionWorkspace | None = None,
 ) -> GenerationResult:
     """Execute the blocking web-research answer through the skill boundary.
 
@@ -1996,6 +2027,7 @@ def _execute_web_generation(
         request_id=request_id,
         principal=principal,
         conversation_context=conversation_context,
+        session_workspace=session_workspace,
     )
     result = skill.answer(CapabilityRequest(question=question), context, progress=research_progress)
     if result.generation is None:
@@ -2013,6 +2045,7 @@ def _execute_agent(
     request_id: str = "",
     principal: AuthenticatedPrincipal | None = None,
     conversation_context: ConversationContext | None = None,
+    session_workspace: SessionWorkspace | None = None,
 ) -> AgentAnswer:
     """Product wrapper for the bounded internal Agent runtime."""
     if runtime is None:
@@ -2024,6 +2057,7 @@ def _execute_agent(
         request_id=request_id,
         principal=principal,
         conversation_context=conversation_context,
+        session_workspace=session_workspace,
     )
 
 
@@ -2087,6 +2121,7 @@ async def _open_ask_stream(
     on_submit_failure: callable | None = None,
     principal: AuthenticatedPrincipal | None = None,
     conversation_context: ConversationContext | None = None,
+    session_workspace: SessionWorkspace | None = None,
     execute: callable = None,
     extra_done_guards: list[ConcurrencyGuard] | None = None,
     on_business_result: Callable[[PublicAskResponse], None] | None = None,
@@ -2133,6 +2168,7 @@ async def _open_ask_stream(
             request_id=request_id,
             principal=principal,
             conversation_context=conversation_context,
+            session_workspace=session_workspace,
         )
     except RuntimeError:
         # Executor was shut down (graceful shutdown in progress).

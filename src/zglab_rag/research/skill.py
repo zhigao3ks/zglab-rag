@@ -33,6 +33,8 @@ from zglab_rag.capabilities.contracts import (
     EvidenceOrigin,
 )
 from zglab_rag.config import Settings
+from zglab_rag.conversation.models import SessionResourceType
+from zglab_rag.conversation.resources import WEB_RESOURCE_VERSION, resource_key, web_resource_key
 from zglab_rag.generation.context import ContextBudget, build_web_context
 from zglab_rag.generation.contracts import (
     GenerationDiagnostics,
@@ -45,6 +47,7 @@ from zglab_rag.generation.persona import WEB_INSUFFICIENT_EVIDENCE_ANSWER
 from zglab_rag.generation.service import GroundedGenerationConfig, generate_from_context
 from zglab_rag.research.contracts import (
     WEB_RESEARCH_CAPABILITY_ID,
+    ExternalEvidence,
     ResearchBudget,
     ResearchPolicyError,
     ResearchResult,
@@ -109,10 +112,16 @@ class WebResearchSkill:
         *,
         provider=None,
         generation_config: GroundedGenerationConfig | None = None,
+        reuse_provider: str = "",
+        reuse_config_fingerprint: str = "",
+        reuse_ttl_seconds: int = 300,
     ) -> None:
         self._service = service
         self._provider = provider
         self._generation_config = generation_config or GroundedGenerationConfig()
+        self._reuse_provider = reuse_provider
+        self._reuse_config_fingerprint = reuse_config_fingerprint
+        self._reuse_ttl_seconds = reuse_ttl_seconds
 
     def execute(
         self,
@@ -156,10 +165,74 @@ class WebResearchSkill:
             else question
         )
 
-        notify(ResearchProgressStage.SEARCHING)
-        notify(ResearchProgressStage.FETCHING)
-        notify(ResearchProgressStage.EXTRACTING)
-        research = self._service.research(research_query, request_id=context.request_id)
+        # Policy is checked before lookup: a previously stored web resource
+        # cannot bypass the web kill switch or the API's auth/quota gates.
+        if not self._service.enabled:
+            research = self._service.research(research_query, request_id=context.request_id)
+        else:
+            cache_key = web_resource_key(
+                query=research_query,
+                provider=self._reuse_provider,
+                config=self._reuse_config_fingerprint,
+            )
+            cached_evidence = None
+            if context.session_workspace is not None:
+                cached = context.session_workspace.get(
+                    SessionResourceType.WEB_EVIDENCE,
+                    cache_key,
+                    producer_fingerprint=self._reuse_config_fingerprint,
+                )
+                if cached is not None:
+                    try:
+                        cached_evidence = [
+                            ExternalEvidence.model_validate(value).model_copy(
+                                update={"evidence_id": f"W{index}"}
+                            )
+                            for index, value in enumerate(cached["evidence"], start=1)
+                        ]
+                        if not cached_evidence:
+                            raise ValueError("empty evidence")
+                    except (KeyError, TypeError, ValueError):
+                        cached_evidence = None
+            if cached_evidence is None:
+                notify(ResearchProgressStage.SEARCHING)
+                notify(ResearchProgressStage.FETCHING)
+                notify(ResearchProgressStage.EXTRACTING)
+                research = self._service.research(research_query, request_id=context.request_id)
+                if (
+                    context.session_workspace is not None
+                    and research.status == ResearchStatus.SUCCESS
+                    and research.evidence
+                ):
+                    context.session_workspace.put(
+                        SessionResourceType.WEB_EVIDENCE,
+                        cache_key,
+                        payload={
+                            "version": WEB_RESOURCE_VERSION,
+                            "evidence": [
+                                item.model_dump(mode="json") for item in research.evidence
+                            ],
+                        },
+                        provenance={
+                            "query_fingerprint": resource_key({"query": research_query}),
+                            "evidence_provenance": [
+                                {
+                                    "url": item.url,
+                                    "canonical_url": item.canonical_url,
+                                    "domain": item.domain,
+                                    "retrieved_at": item.retrieved_at.isoformat(),
+                                    "search_result_url": item.search_result_url,
+                                    "redirect_chain": list(item.redirect_chain),
+                                }
+                                for item in research.evidence
+                            ],
+                        },
+                        producer_fingerprint=self._reuse_config_fingerprint,
+                        source_request_id=context.request_id,
+                        ttl_seconds=self._reuse_ttl_seconds,
+                    )
+            else:
+                research = ResearchResult(status=ResearchStatus.SUCCESS, evidence=cached_evidence)
 
         if research.status == ResearchStatus.POLICY_DISABLED:
             raise ResearchPolicyError("web research is disabled by policy")
@@ -292,6 +365,24 @@ def build_web_research_skill(settings: Settings, llm_provider) -> WebResearchSki
     depend on SEARCH_API_KEY while the kill switch is off, so ProductionRuntime
     builds this lazily.
     """
+    reuse_config = resource_key(
+        {
+            "provider": settings.search_provider.lower(),
+            "budget": {
+                "max_search_results": settings.research_max_search_results,
+                "max_fetch_candidates": settings.research_max_fetch_candidates,
+                "max_redirects": settings.research_max_redirects,
+                "fetch_timeout_seconds": settings.research_fetch_timeout_seconds,
+                "overall_timeout_seconds": settings.research_overall_timeout_seconds,
+                "max_response_bytes": settings.research_max_response_bytes,
+                "max_extracted_chars": settings.research_max_extracted_chars,
+            },
+            "generation": {
+                "top_k": settings.generation_retrieval_top_k,
+                "context_chars": settings.generation_max_context_chars,
+            },
+        }
+    )
     return WebResearchSkill(
         build_research_service(settings),
         provider=llm_provider,
@@ -304,4 +395,7 @@ def build_web_research_skill(settings: Settings, llm_provider) -> WebResearchSki
             retrieval_query_max_chars=settings.conversation_context_retrieval_query_max_chars,
             retrieval_query_max_bytes=settings.conversation_context_retrieval_query_max_bytes,
         ),
+        reuse_provider=settings.search_provider.lower(),
+        reuse_config_fingerprint=reuse_config,
+        reuse_ttl_seconds=settings.session_web_ttl_seconds,
     )

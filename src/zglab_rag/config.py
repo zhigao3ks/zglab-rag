@@ -123,6 +123,16 @@ class Settings(BaseSettings):
     conversation_summary_source_max_chars: int = Field(default=12000, ge=2000, le=32000)
     conversation_summary_source_max_bytes: int = Field(default=36000, ge=6000, le=96000)
     conversation_summary_max_chars: int = Field(default=1600, ge=200, le=4000)
+
+    # Phase 15D: bounded, per-conversation typed resource reuse.  This is
+    # intentionally opt-in so deploying the schema never changes behavior.
+    session_resource_reuse_enabled: bool = False
+    session_resource_max_items: int = Field(default=48, ge=1, le=256)
+    session_resource_max_bytes: int = Field(default=524288, ge=4096, le=4 * 1024 * 1024)
+    session_resource_max_item_bytes: int = Field(default=65536, ge=1024, le=512 * 1024)
+    session_personal_ttl_seconds: int = Field(default=21600, ge=60, le=86400)
+    session_web_ttl_seconds: int = Field(default=300, ge=30, le=3600)
+    session_tool_ttl_seconds: int = Field(default=86400, ge=60, le=7 * 86400)
     # Public origin used to build activation URLs in CLI output and to
     # validate Origin/Referer headers; set to https://ask.zglab.fun in prod.
     auth_public_base_url: str = "http://localhost:8000"

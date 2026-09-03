@@ -32,6 +32,7 @@ from zglab_rag.capabilities.contracts import (
 )
 from zglab_rag.capabilities.errors import CapabilityTechnicalError
 from zglab_rag.capabilities.registry import CapabilityRegistry
+from zglab_rag.conversation.resources import knowledge_snapshot_fingerprint
 from zglab_rag.generation.contracts import ProgressCallback
 
 
@@ -85,13 +86,27 @@ class PersonalKnowledgeSkill:
         try:
             with self._runtime.request_connection() as connection:
                 service = self._runtime.create_service(connection)
+                reuse_kwargs = {}
+                if context.session_workspace is not None:
+                    reuse_kwargs = {
+                        "session_workspace": context.session_workspace,
+                        "knowledge_snapshot_fingerprint": knowledge_snapshot_fingerprint(
+                            connection
+                        ),
+                        "request_id": context.request_id,
+                    }
                 if context.conversation_context is None:
-                    generation = service.answer(request.question, progress=progress)
+                    generation = service.answer(
+                        request.question,
+                        progress=progress,
+                        **reuse_kwargs,
+                    )
                 else:
                     generation = service.answer(
                         request.question,
                         progress=progress,
                         conversation_context=context.conversation_context,
+                        **reuse_kwargs,
                     )
         except Exception as exc:
             raise CapabilityTechnicalError(

@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from zglab_rag.conversation.models import Conversation, ConversationSummary, Message, MessageRole
+from zglab_rag.conversation.models import (
+    Conversation,
+    ConversationSummary,
+    Message,
+    MessageRole,
+    SessionResource,
+    SessionResourceType,
+)
 
 
 def utc_now() -> datetime:
@@ -305,3 +313,154 @@ class ConversationSummaryRepository:
             raise
 
         return self.get(owner_user_id=owner_user_id, conversation_id=conversation_id)
+
+
+def _resource_from_row(row: sqlite3.Row) -> SessionResource:
+    return SessionResource(
+        id=row["id"],
+        conversation_id=row["conversation_id"],
+        resource_type=SessionResourceType(row["resource_type"]),
+        resource_key=row["resource_key"],
+        payload_json=row["payload_json"],
+        provenance_json=row["provenance_json"],
+        producer_fingerprint=row["producer_fingerprint"],
+        source_request_id=row["source_request_id"],
+        size_bytes=row["size_bytes"],
+        created_at=datetime.fromisoformat(row["created_at"]),
+        expires_at=datetime.fromisoformat(row["expires_at"]),
+        last_used_at=datetime.fromisoformat(row["last_used_at"]),
+    )
+
+
+class SessionResourceRepository:
+    """SQLite persistence for typed resource reuse, always owner scoped."""
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self.connection = connection
+
+    def get_valid(
+        self,
+        *,
+        owner_user_id: int,
+        conversation_id: int,
+        resource_type: SessionResourceType,
+        resource_key: str,
+        producer_fingerprint: str,
+        now: datetime | None = None,
+    ) -> SessionResource | None:
+        moment = now or utc_now()
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            row = self.connection.execute(
+                """
+                SELECT sr.* FROM session_resources sr
+                JOIN conversations c ON c.id=sr.conversation_id
+                WHERE c.owner_user_id=? AND sr.conversation_id=?
+                  AND sr.resource_type=? AND sr.resource_key=?
+                """,
+                (owner_user_id, conversation_id, resource_type.value, resource_key),
+            ).fetchone()
+            if row is None:
+                self.connection.commit()
+                return None
+            if datetime.fromisoformat(row["expires_at"]) <= moment:
+                self.connection.execute("DELETE FROM session_resources WHERE id=?", (row["id"],))
+                self.connection.commit()
+                return None
+            if row["producer_fingerprint"] != producer_fingerprint:
+                self.connection.commit()
+                return None
+            stamp = _format_timestamp(moment)
+            self.connection.execute(
+                "UPDATE session_resources SET last_used_at=? WHERE id=?", (stamp, row["id"])
+            )
+            self.connection.commit()
+            return _resource_from_row(row)
+        except Exception:
+            self.connection.rollback()
+            raise
+
+    def put_bounded(
+        self,
+        *,
+        owner_user_id: int,
+        conversation_id: int,
+        resource_type: SessionResourceType,
+        resource_key: str,
+        payload: dict,
+        provenance: dict,
+        producer_fingerprint: str,
+        source_request_id: str,
+        ttl_seconds: int,
+        max_items: int,
+        max_bytes: int,
+        max_item_bytes: int,
+        now: datetime | None = None,
+    ) -> None:
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive")
+        payload_json = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        provenance_json = json.dumps(
+            provenance, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        size_bytes = len(payload_json.encode("utf-8")) + len(provenance_json.encode("utf-8"))
+        if not 0 < size_bytes <= max_item_bytes or size_bytes > max_bytes:
+            raise ValueError("resource exceeds configured byte limit")
+        moment = now or utc_now()
+        timestamp = _format_timestamp(moment)
+        expires_at = _format_timestamp(moment + timedelta(seconds=ttl_seconds))
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            owned = self.connection.execute(
+                "SELECT 1 FROM conversations WHERE id=? AND owner_user_id=?",
+                (conversation_id, owner_user_id),
+            ).fetchone()
+            if owned is None:
+                self.connection.rollback()
+                raise ValueError("conversation is not owned")
+            self.connection.execute(
+                "DELETE FROM session_resources WHERE expires_at<=?", (timestamp,)
+            )
+            self.connection.execute(
+                "INSERT INTO session_resources("
+                "conversation_id,resource_type,resource_key,payload_json,provenance_json,"
+                "producer_fingerprint,source_request_id,size_bytes,created_at,expires_at,last_used_at"
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(conversation_id,resource_type,resource_key) DO UPDATE SET "
+                "payload_json=excluded.payload_json,provenance_json=excluded.provenance_json,producer_fingerprint=excluded.producer_fingerprint,source_request_id=excluded.source_request_id,size_bytes=excluded.size_bytes,expires_at=excluded.expires_at,last_used_at=excluded.last_used_at",
+                (
+                    conversation_id,
+                    resource_type.value,
+                    resource_key,
+                    payload_json,
+                    provenance_json,
+                    producer_fingerprint,
+                    source_request_id,
+                    size_bytes,
+                    timestamp,
+                    expires_at,
+                    timestamp,
+                ),
+            )
+            while True:
+                totals = self.connection.execute(
+                    "SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes),0) AS bytes "
+                    "FROM session_resources WHERE conversation_id=?",
+                    (conversation_id,),
+                ).fetchone()
+                if totals["count"] <= max_items and totals["bytes"] <= max_bytes:
+                    break
+                victim = self.connection.execute(
+                    "SELECT id FROM session_resources WHERE conversation_id=? "
+                    "ORDER BY last_used_at ASC, created_at ASC, id ASC LIMIT 1",
+                    (conversation_id,),
+                ).fetchone()
+                if victim is None:
+                    break
+                self.connection.execute("DELETE FROM session_resources WHERE id=?", (victim["id"],))
+            self.connection.commit()
+        except Exception:
+            self.connection.rollback()
+            raise
