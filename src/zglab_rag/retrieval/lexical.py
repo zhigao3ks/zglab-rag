@@ -76,6 +76,8 @@ class LexicalRetriever:
             content_weight=self.profile.content_weight,
             source_ids=query.filters.source_ids,
             scopes=[scope.value for scope in query.filters.scopes],
+            document_ids=query.filters.document_ids,
+            section_ids=query.filters.section_ids,
         )
         search_ms = (perf_counter() - search_started) * 1000
         results = [

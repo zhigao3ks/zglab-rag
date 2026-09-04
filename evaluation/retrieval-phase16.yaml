@@ -1,0 +1,176 @@
+version: 1
+
+# The targets below were checked against the PUBLIC corpus. Phase 16 uses the
+# same target for every retrieval mode; subsets only control extra reporting.
+queries:
+  - id: phase16-structure-01
+    query: Agent 长期记忆的分层模型是什么？
+    category: knowledge
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System]
+  - id: phase16-structure-02
+    query: Memory 和 Context 的边界有什么不同？
+    category: knowledge
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System]
+  - id: phase16-structure-03
+    query: Agent 的后台记忆 consolidation 应该怎样做？
+    category: knowledge
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System]
+  - id: phase16-structure-04
+    query: 多项目 Agent 怎样隔离不同 project 的 memory scope？
+    category: knowledge
+    subsets: [structure, multi_hop]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System]
+  - id: phase16-structure-05
+    query: 成熟记忆系统为何需要主动遗忘？
+    category: knowledge
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/agent-long-term-memory.md
+        section_path: [Agent 长期记忆是如何实现的：从 Context Window 到真正可用的 Memory System]
+  - id: phase16-graph-01
+    query: Agent 与固定 Workflow 的区别是什么？
+    category: knowledge
+    subsets: [graph]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构]
+  - id: phase16-graph-02
+    query: Agent 的 Permission 与 Sandbox 如何防止工具失控？
+    category: knowledge
+    subsets: [graph, multi_hop]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构]
+  - id: phase16-graph-03
+    query: Agent 哪些操作需要 Human-in-the-loop？
+    category: knowledge
+    subsets: [graph]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构]
+  - id: phase16-graph-04
+    query: Agent observability 要记录什么才能解释失败？
+    category: knowledge
+    subsets: [graph, structure]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构]
+  - id: phase16-graph-05
+    query: 为什么 Agent evaluation 不能只靠感觉？
+    category: knowledge
+    subsets: [graph]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/production-agent-system-architecture.md
+        section_path: [一个成熟的 Agent 系统应该具备什么：从 LLM + Tool 到生产级智能体架构]
+  - id: phase16-structure-06
+    query: 结构化 LLM 调用为什么需要 Provider 适配层？
+    category: knowledge
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/reliable-structured-llm-calls.md
+        section_path: [结构化大模型调用如何可靠落地：Provider、宽松边界与确定性降级]
+  - id: phase16-multihop-01
+    query: 结构化 LLM 请求失败后如何结合重试和节点降级？
+    category: mixed_technical
+    subsets: [structure, multi_hop]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/reliable-structured-llm-calls.md
+        section_path: [结构化大模型调用如何可靠落地：Provider、宽松边界与确定性降级]
+  - id: phase16-project-01
+    query: ResumeTailor 为什么将 Evidence 作为事实主键？
+    category: project
+    subsets: [structure, graph]
+    relevant:
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计]
+  - id: phase16-project-02
+    query: ResumeTailor Agent 为什么采用固定工作流？
+    category: project
+    subsets: [structure, graph]
+    relevant:
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计]
+  - id: phase16-project-03
+    query: Astro 工具平台怎样用注册表扩展新工具？
+    category: project
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱]
+  - id: phase16-project-04
+    query: Astro 页面与 Preact Island 如何分工？
+    category: project
+    subsets: [structure, multi_hop]
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱]
+  - id: phase16-project-05
+    query: 大 JSON 为什么需要放进 Web Worker？
+    category: project
+    subsets: [structure]
+    relevant:
+      - source_id: notes
+        source_path: projects/building-local-first-astro-tool-platform.md
+        section_path: [从五个小工具到可扩展平台：Astro + Preact 构建本地优先工具箱]
+  - id: phase16-project-06
+    query: 移动录音的健康快照和状态事件分别解决什么？
+    category: project
+    subsets: [structure, multi_hop]
+    relevant:
+      - source_id: notes
+        source_path: projects/observable-mobile-recording-pipeline.md
+        section_path: [从“录音正常”到证据链完整：移动会议录音的可观测性改造]
+  - id: phase16-cross-document-01
+    query: Evidence 如何同时约束简历生成事实与最终 PDF？
+    category: mixed_technical
+    subsets: [structure, graph, multi_hop]
+    relevant:
+      - source_id: notes
+        source_path: knowledge/evidence-grounded-resume-generation.md
+        section_path: [把大模型生成限制在事实边界内：Evidence 驱动的内容生成与校验]
+      - source_id: notes
+        source_path: projects/resume-tailor-agent-controlled-workflow.md
+        section_path: [从岗位 JD 到可追溯 PDF：ResumeTailor Agent 的可控工作流设计]
+  - id: phase16-ambiguous-01
+    query: RAG 中 retrieval、reranking 和 evidence grounding 各自做什么？
+    category: mixed_technical
+    subsets: [graph, multi_hop]
+    relevant:
+      - source_id: identity-profile
+        source_path: knowledge/identity/profile.md
+        section_path: [黄志高 · Personal Knowledge Profile]
+  - id: phase16-hard-negative-01
+    query: MCP 是否证明系统一定使用了某个工具？
+    category: hard_negative
+    subsets: [graph]
+  - id: phase16-hard-negative-02
+    query: 完全不存在的 Project Zephyr 采用了什么数据库？
+    category: hard_negative
+    subsets: [graph, structure]

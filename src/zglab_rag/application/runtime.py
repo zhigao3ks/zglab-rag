@@ -28,8 +28,18 @@ from zglab_rag.indexing.profile import load_active_embedding_profile
 from zglab_rag.reranking.config import RerankerModelRegistry
 from zglab_rag.reranking.cross_encoder import CrossEncoderRerankerProvider
 from zglab_rag.reranking.service import RerankedRetriever, RerankerRetrievalConfig
-from zglab_rag.retrieval.cli import retrieval_config
+from zglab_rag.retrieval.cli import hybrid_config, retrieval_config
+from zglab_rag.retrieval.config import (
+    GraphRetrievalConfig,
+    HierarchicalRetrievalConfig,
+    IntelligentRetrievalConfig,
+)
 from zglab_rag.retrieval.contracts import RetrievalQuery, RetrievalResponse
+from zglab_rag.retrieval.graph import GraphRetriever
+from zglab_rag.retrieval.hierarchical import HierarchicalRetriever
+from zglab_rag.retrieval.hybrid import HybridRetriever
+from zglab_rag.retrieval.intelligent import IntelligentRetriever
+from zglab_rag.retrieval.lexical import LexicalRetriever
 from zglab_rag.retrieval.vector import VectorRetriever
 from zglab_rag.storage.database import Database
 
@@ -99,10 +109,39 @@ def build_generation_retriever(
     reranker_model_path: Path | None = None,
     device: str = "cpu",
 ) -> Retriever:
-    """Construct a retriever for generation (vector or reranked mode).
+    """Construct a retriever for every server-controlled generation mode.
 
     This is the shared factory used by both CLI and HTTP API.
     """
+    lexical = LexicalRetriever(connection, config=retrieval_config(settings))
+    hierarchy = HierarchicalRetriever(
+        connection,
+        lexical,
+        config=HierarchicalRetrievalConfig(
+            default_top_k=settings.generation_retrieval_top_k,
+            max_top_k=settings.retrieval_max_top_k,
+            document_candidates=settings.hierarchical_document_candidates,
+            section_candidates=settings.hierarchical_section_candidates,
+            chunk_candidates=settings.hierarchical_chunk_candidates,
+        ),
+    )
+    graph = GraphRetriever(
+        connection,
+        lexical,
+        config=GraphRetrievalConfig(
+            default_top_k=settings.generation_retrieval_top_k,
+            max_top_k=settings.retrieval_max_top_k,
+            max_start_nodes=settings.graph_max_start_nodes,
+            max_hops=settings.graph_max_hops,
+            max_nodes=settings.graph_max_nodes,
+            max_edges=settings.graph_max_edges,
+            max_candidate_documents=settings.graph_max_candidate_documents,
+        ),
+    )
+    if mode == "hierarchical":
+        return hierarchy
+    if mode == "graph":
+        return graph
     vector = VectorRetriever(
         connection,
         embedding_components.provider,
@@ -112,6 +151,25 @@ def build_generation_retriever(
     )
     if mode == "vector":
         return vector
+    hybrid = HybridRetriever(vector, lexical, config=hybrid_config(settings))
+    if mode == "hybrid":
+        return hybrid
+    if mode == "intelligent":
+        return IntelligentRetriever(
+            hybrid,
+            hierarchy,
+            graph,
+            config=IntelligentRetrievalConfig(
+                default_top_k=settings.generation_retrieval_top_k,
+                max_top_k=settings.retrieval_max_top_k,
+                hybrid_weight=settings.intelligent_hybrid_weight,
+                hierarchical_weight=settings.intelligent_hierarchical_weight,
+                graph_weight=settings.intelligent_graph_weight,
+                rrf_k=settings.intelligent_rrf_k,
+            ),
+        )
+    if mode != "reranked":
+        raise ValueError(f"Unsupported generation retrieval mode: {mode}")
     candidate_k = candidate_k or settings.reranker_candidate_k
     reranker_model_config = RerankerModelRegistry.from_yaml(reranker_models_config).get_enabled(
         reranker_model
@@ -150,12 +208,13 @@ def build_generation_service(
     llm_provider: GenerationProvider,
     *,
     settings: Settings,
-    mode: str = "vector",
+    mode: str | None = None,
 ) -> GroundedAnswerService:
     """Construct a fully configured GroundedAnswerService.
 
     This is the primary entry point for both CLI and HTTP API.
     """
+    mode = mode or settings.generation_retrieval_mode
     vector_config = retrieval_config(settings)
     retriever = build_generation_retriever(
         mode,
@@ -175,6 +234,60 @@ def build_generation_service(
             "maximum_top_k": candidate_k,
             "model": reranker_model_config.id,
         }
+    structure = {
+        row["key"]: row["value"]
+        for row in connection.execute(
+            "SELECT key,value FROM index_metadata WHERE key IN "
+            "('retrieval_structure_version','retrieval_structure_snapshot',"
+            "'knowledge_graph_catalog_version')"
+        ).fetchall()
+    }
+    mode_config = {
+        "structure_version": structure.get("retrieval_structure_version", "missing"),
+        "structure_snapshot": structure.get("retrieval_structure_snapshot", "missing"),
+        "graph_version": structure.get("knowledge_graph_catalog_version", "missing"),
+    }
+    if mode == "hierarchical":
+        mode_config.update(
+            {
+                "document_candidates": settings.hierarchical_document_candidates,
+                "section_candidates": settings.hierarchical_section_candidates,
+                "chunk_candidates": settings.hierarchical_chunk_candidates,
+            }
+        )
+    elif mode == "graph":
+        mode_config.update(
+            {
+                "max_start_nodes": settings.graph_max_start_nodes,
+                "max_hops": settings.graph_max_hops,
+                "max_nodes": settings.graph_max_nodes,
+                "max_edges": settings.graph_max_edges,
+                "max_candidate_documents": settings.graph_max_candidate_documents,
+            }
+        )
+    elif mode == "intelligent":
+        mode_config.update(
+            {
+                "hierarchical": {
+                    "document_candidates": settings.hierarchical_document_candidates,
+                    "section_candidates": settings.hierarchical_section_candidates,
+                    "chunk_candidates": settings.hierarchical_chunk_candidates,
+                },
+                "graph": {
+                    "max_start_nodes": settings.graph_max_start_nodes,
+                    "max_hops": settings.graph_max_hops,
+                    "max_nodes": settings.graph_max_nodes,
+                    "max_edges": settings.graph_max_edges,
+                    "max_candidate_documents": settings.graph_max_candidate_documents,
+                },
+                "fusion": {
+                    "hybrid_weight": settings.intelligent_hybrid_weight,
+                    "hierarchical_weight": settings.intelligent_hierarchical_weight,
+                    "graph_weight": settings.intelligent_graph_weight,
+                    "rrf_k": settings.intelligent_rrf_k,
+                },
+            }
+        )
     return GroundedAnswerService(
         retriever,
         llm_provider,
@@ -192,6 +305,7 @@ def build_generation_service(
             vector_config=vector_config,
             mode=mode,
             reranker_config=reranker_config,
+            mode_config=mode_config,
         ),
     )
 

@@ -23,6 +23,12 @@ class QueryCategory(StrEnum):
     HARD_NEGATIVE = "hard_negative"
 
 
+class QuerySubset(StrEnum):
+    STRUCTURE = "structure"
+    GRAPH = "graph"
+    MULTI_HOP = "multi_hop"
+
+
 class RelevantTarget(BaseModel):
     source_id: str = Field(min_length=1)
     source_path: str = Field(min_length=1)
@@ -45,6 +51,7 @@ class EvaluationQuery(BaseModel):
     category: QueryCategory
     relevant: list[RelevantTarget] = Field(default_factory=list)
     needs_review: bool = False
+    subsets: tuple[QuerySubset, ...] = ()
 
     @model_validator(mode="after")
     def validate_relevance(self) -> EvaluationQuery:

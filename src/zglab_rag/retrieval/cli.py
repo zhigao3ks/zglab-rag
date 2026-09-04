@@ -11,9 +11,18 @@ from zglab_rag.indexing.profile import load_active_embedding_profile
 from zglab_rag.reranking.config import RerankerModelRegistry
 from zglab_rag.reranking.cross_encoder import CrossEncoderRerankerProvider
 from zglab_rag.reranking.service import RerankedRetriever, RerankerRetrievalConfig
-from zglab_rag.retrieval.config import HybridRetrievalConfig, VectorRetrievalConfig
+from zglab_rag.retrieval.config import (
+    GraphRetrievalConfig,
+    HierarchicalRetrievalConfig,
+    HybridRetrievalConfig,
+    IntelligentRetrievalConfig,
+    VectorRetrievalConfig,
+)
 from zglab_rag.retrieval.contracts import RetrievalFilter, RetrievalQuery
+from zglab_rag.retrieval.graph import GraphRetriever
+from zglab_rag.retrieval.hierarchical import HierarchicalRetriever
 from zglab_rag.retrieval.hybrid import HybridRetriever
+from zglab_rag.retrieval.intelligent import IntelligentRetriever
 from zglab_rag.retrieval.lexical import LexicalRetriever
 from zglab_rag.retrieval.vector import VectorRetriever
 from zglab_rag.storage.database import Database
@@ -48,7 +57,15 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument("query")
     search.add_argument(
         "--mode",
-        choices=("vector", "lexical", "hybrid", "reranked"),
+        choices=(
+            "vector",
+            "lexical",
+            "hybrid",
+            "reranked",
+            "hierarchical",
+            "graph",
+            "intelligent",
+        ),
         default="vector",
     )
     search.add_argument("--top-k", type=int)
@@ -76,8 +93,33 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _build_retriever(args, connection, settings: Settings):
+    lexical = LexicalRetriever(connection, config=retrieval_config(settings))
+    hierarchical = HierarchicalRetriever(
+        connection,
+        lexical,
+        config=HierarchicalRetrievalConfig(
+            document_candidates=settings.hierarchical_document_candidates,
+            section_candidates=settings.hierarchical_section_candidates,
+            chunk_candidates=settings.hierarchical_chunk_candidates,
+        ),
+    )
+    graph = GraphRetriever(
+        connection,
+        lexical,
+        config=GraphRetrievalConfig(
+            max_start_nodes=settings.graph_max_start_nodes,
+            max_hops=settings.graph_max_hops,
+            max_nodes=settings.graph_max_nodes,
+            max_edges=settings.graph_max_edges,
+            max_candidate_documents=settings.graph_max_candidate_documents,
+        ),
+    )
     if args.mode == "lexical":
-        return LexicalRetriever(connection, config=retrieval_config(settings))
+        return lexical
+    if args.mode == "hierarchical":
+        return hierarchical
+    if args.mode == "graph":
+        return graph
     profile, model_config = load_active_embedding_profile(args.models_config)
     provider = SentenceTransformerEmbeddingProvider(
         model_config,
@@ -94,8 +136,19 @@ def _build_retriever(args, connection, settings: Settings):
     if args.mode == "vector":
         return vector
     if args.mode == "hybrid":
-        lexical = LexicalRetriever(connection, config=retrieval_config(settings))
         return HybridRetriever(vector, lexical, config=hybrid_config(settings))
+    if args.mode == "intelligent":
+        return IntelligentRetriever(
+            HybridRetriever(vector, lexical, config=hybrid_config(settings)),
+            hierarchical,
+            graph,
+            config=IntelligentRetrievalConfig(
+                hybrid_weight=settings.intelligent_hybrid_weight,
+                hierarchical_weight=settings.intelligent_hierarchical_weight,
+                graph_weight=settings.intelligent_graph_weight,
+                rrf_k=settings.intelligent_rrf_k,
+            ),
+        )
     candidate_k = args.candidate_k or settings.reranker_candidate_k
     reranker_model = RerankerModelRegistry.from_yaml(
         args.reranker_models_config

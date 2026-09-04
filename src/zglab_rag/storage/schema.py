@@ -5,7 +5,7 @@ import sqlite3
 
 from zglab_rag.domain.lexical import DEFAULT_LEXICAL_PROFILE, LexicalProfile
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 VECTOR_DIMENSION = 512
 
 RELATIONAL_SCHEMA = """
@@ -121,9 +121,106 @@ CREATE TABLE lexical_profiles (
 );
 """
 
+RETRIEVAL_STRUCTURE_VERSION = 1
+
+STRUCTURE_SCHEMA_STATEMENTS = (
+    """
+    CREATE TABLE document_profiles (
+        document_id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        project_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        outline_json TEXT NOT NULL,
+        keywords_json TEXT NOT NULL,
+        profile_hash TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(document_id) REFERENCES documents(document_id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE sections (
+        section_id TEXT PRIMARY KEY,
+        document_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        section_path_json TEXT NOT NULL,
+        section_title TEXT NOT NULL,
+        chunk_count INTEGER NOT NULL,
+        first_chunk_index INTEGER NOT NULL,
+        last_chunk_index INTEGER NOT NULL,
+        profile_text TEXT NOT NULL,
+        FOREIGN KEY(document_id) REFERENCES documents(document_id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX sections_document_idx ON sections(document_id, first_chunk_index)",
+    "CREATE INDEX sections_source_idx ON sections(source_id)",
+    """
+    CREATE VIRTUAL TABLE fts_documents USING fts5(
+        document_id UNINDEXED, title, project, locator, summary, outline, keywords,
+        tokenize='trigram'
+    )
+    """,
+    """
+    CREATE VIRTUAL TABLE fts_sections USING fts5(
+        section_id UNINDEXED, document_id UNINDEXED,
+        section_title, section_path, profile_text, tokenize='trigram'
+    )
+    """,
+    """
+    CREATE TABLE graph_nodes (
+        node_id TEXT PRIMARY KEY,
+        node_type TEXT NOT NULL CHECK(node_type IN (
+            'PROJECT','DOCUMENT','SECTION','PERSON','TECHNOLOGY','TOPIC'
+        )),
+        canonical_name TEXT NOT NULL,
+        normalized_name TEXT NOT NULL,
+        metadata_json TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX graph_nodes_type_name_idx ON graph_nodes(node_type, normalized_name)",
+    """
+    CREATE TABLE graph_aliases (
+        normalized_alias TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        PRIMARY KEY(normalized_alias, node_id),
+        FOREIGN KEY(node_id) REFERENCES graph_nodes(node_id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX graph_aliases_node_idx ON graph_aliases(node_id)",
+    """
+    CREATE TABLE graph_edges (
+        edge_id TEXT PRIMARY KEY,
+        source_node_id TEXT NOT NULL,
+        relation TEXT NOT NULL CHECK(relation IN (
+            'CONTAINS','MENTIONS','RELATED_TO','USES','DEVELOPED','WORKED_ON'
+        )),
+        target_node_id TEXT NOT NULL,
+        provenance_kind TEXT NOT NULL CHECK(provenance_kind IN (
+            'STRUCTURAL','CURATED','TEXT_MENTION'
+        )),
+        source_id TEXT,
+        document_id TEXT,
+        section_id TEXT,
+        chunk_id TEXT,
+        metadata_json TEXT NOT NULL,
+        FOREIGN KEY(source_node_id) REFERENCES graph_nodes(node_id) ON DELETE CASCADE,
+        FOREIGN KEY(target_node_id) REFERENCES graph_nodes(node_id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX graph_edges_source_idx ON graph_edges(source_node_id, edge_id)",
+    "CREATE INDEX graph_edges_target_idx ON graph_edges(target_node_id, edge_id)",
+    "CREATE INDEX graph_edges_document_idx ON graph_edges(document_id)",
+)
+
+
+def _execute_script_atomically(connection: sqlite3.Connection, script: str) -> None:
+    for statement in script.split(";"):
+        if statement.strip():
+            connection.execute(statement)
+
 
 def create_schema(connection: sqlite3.Connection) -> None:
-    connection.executescript(RELATIONAL_SCHEMA)
+    _execute_script_atomically(connection, RELATIONAL_SCHEMA)
     connection.execute(
         "CREATE VIRTUAL TABLE vec_chunks USING vec0("
         f"embedding float[{VECTOR_DIMENSION}] distance_metric=cosine)"
@@ -132,7 +229,9 @@ def create_schema(connection: sqlite3.Connection) -> None:
         "CREATE VIRTUAL TABLE fts_chunks USING "
         "fts5(title, section_path, content, tokenize='trigram')"
     )
-    connection.executescript(LEXICAL_SCHEMA)
+    _execute_script_atomically(connection, LEXICAL_SCHEMA)
+    for statement in STRUCTURE_SCHEMA_STATEMENTS:
+        connection.execute(statement)
     activate_lexical_profile(connection, DEFAULT_LEXICAL_PROFILE)
     connection.execute(
         "INSERT INTO schema_metadata(key, value) VALUES ('schema_version', ?)",
@@ -142,7 +241,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
 
 def create_schema_v1(connection: sqlite3.Connection) -> None:
     """Create the historical schema only for migration tests."""
-    connection.executescript(RELATIONAL_SCHEMA)
+    _execute_script_atomically(connection, RELATIONAL_SCHEMA)
     connection.execute(
         "CREATE VIRTUAL TABLE vec_chunks USING vec0("
         f"embedding float[{VECTOR_DIMENSION}] distance_metric=cosine)"
@@ -204,6 +303,26 @@ def migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
             )
         connection.execute(
             "UPDATE schema_metadata SET value='2' WHERE key='schema_version'"
+        )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+    """Atomically add all Phase 16 derived retrieval structures."""
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        for statement in STRUCTURE_SCHEMA_STATEMENTS:
+            idempotent = statement.replace(
+                "CREATE VIRTUAL TABLE ", "CREATE VIRTUAL TABLE IF NOT EXISTS "
+            ).replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ").replace(
+                "CREATE INDEX ", "CREATE INDEX IF NOT EXISTS "
+            )
+            connection.execute(idempotent)
+        connection.execute(
+            "UPDATE schema_metadata SET value='3' WHERE key='schema_version'"
         )
         connection.commit()
     except Exception:

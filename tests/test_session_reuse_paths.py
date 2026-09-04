@@ -184,6 +184,25 @@ def test_personal_snapshot_and_actual_retrieval_config_invalidate_reuse() -> Non
     assert provider.calls == 4
 
 
+def test_phase16_mode_config_changes_personal_retrieval_fingerprint() -> None:
+    base = personal_retrieval_config_fingerprint(
+        vector_config=VectorRetrievalConfig(),
+        mode="intelligent",
+        mode_config={"structure_version": "1", "graph_version": "1", "rrf_k": 60},
+    )
+    changed_graph = personal_retrieval_config_fingerprint(
+        vector_config=VectorRetrievalConfig(),
+        mode="intelligent",
+        mode_config={"structure_version": "1", "graph_version": "2", "rrf_k": 60},
+    )
+    changed_fusion = personal_retrieval_config_fingerprint(
+        vector_config=VectorRetrievalConfig(),
+        mode="intelligent",
+        mode_config={"structure_version": "1", "graph_version": "1", "rrf_k": 61},
+    )
+    assert len({base, changed_graph, changed_fusion}) == 3
+
+
 def test_personal_malformed_or_expired_reuse_falls_back_to_retrieval() -> None:
     workspace = MemoryWorkspace()
     fingerprint = personal_retrieval_config_fingerprint(

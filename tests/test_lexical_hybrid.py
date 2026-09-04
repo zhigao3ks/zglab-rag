@@ -215,7 +215,7 @@ def test_v1_to_v2_migration_preserves_vectors_and_backfills_fts(tmp_path: Path) 
     migrated = database.connect(initialize=False, migrate=True)
     repository = IndexRepository(migrated)
 
-    assert Database.versions(migrated).schema == 2
+    assert Database.versions(migrated).schema == 3
     assert repository.vector_count() == vector_before == 1
     assert repository.lexical_count() == 1
     assert _lexical((database, migrated, None, None, VectorRetrievalConfig())).retrieve(

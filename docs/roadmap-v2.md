@@ -44,8 +44,8 @@ Phase 14    Agent Orchestrator                              ✅ SEALED
 
 UX Track     Frontend / Product Experience Stabilization   ✅ COMPLETE
 
-Phase 15    Conversation & Session Memory                   ← IMPLEMENTED / awaiting Phase 15D production acceptance
-Phase 16    Retrieval Intelligence & Knowledge Graph
+Phase 15    Conversation & Session Memory                  ✅ SEALED
+Phase 16    Retrieval Intelligence & Knowledge Graph       ← IMPLEMENTED / awaiting production acceptance
 Phase 17    Agent Analyst
 Phase 18    Advanced Agent Autonomy / Bounded ReAct
 Phase 19    Owner Agent / Advanced Permissions
@@ -353,6 +353,11 @@ Phase 15 不自动把聊天内容写入 Personal Knowledge，也不建立无边�
 ---
 
 ## 6. Phase 16 — Retrieval Intelligence & Knowledge Graph
+
+**Status: IMPLEMENTED / awaiting production acceptance.** Phase 15 is SEALED. Phase 16 code,
+schema migration, deterministic derived structures, provenance-backed graph, fusion, and local
+benchmark are complete; production migration and retrieval-mode switching remain explicitly
+outside this implementation change.
 
 目标：把当前“全库 Flat Chunk Top-K”逐步升级为“理解知识结构后再检索”。
 

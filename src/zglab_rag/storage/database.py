@@ -11,7 +11,12 @@ from zglab_rag.storage.errors import (
     SchemaVersionError,
     SqliteVecLoadError,
 )
-from zglab_rag.storage.schema import SCHEMA_VERSION, create_schema, migrate_v1_to_v2
+from zglab_rag.storage.schema import (
+    SCHEMA_VERSION,
+    create_schema,
+    migrate_v1_to_v2,
+    migrate_v2_to_v3,
+)
 
 SQLITE_VEC_VERSION = "0.1.9"
 
@@ -120,10 +125,18 @@ class Database:
                     f"Unable to migrate schema v1 to v2: {exc}"
                 ) from exc
             version = 2
+        if version == 2 and migrate:
+            try:
+                migrate_v2_to_v3(connection)
+            except sqlite3.Error as exc:
+                raise DatabaseInitializationError(
+                    f"Unable to migrate schema v2 to v3: {exc}"
+                ) from exc
+            version = 3
         if version != SCHEMA_VERSION:
             raise SchemaVersionError(
                 f"Unsupported database schema version {version}; expected {SCHEMA_VERSION}. "
-                "Run the explicit database migration if this is schema version 1."
+                "Run the explicit database migration for an older schema."
             )
 
     @staticmethod

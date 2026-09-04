@@ -58,6 +58,7 @@ def personal_retrieval_config_fingerprint(
     vector_config: Any,
     mode: str,
     reranker_config: dict[str, Any] | None = None,
+    mode_config: dict[str, Any] | None = None,
 ) -> str:
     """Fingerprint the retrieval behavior that produced a personal result.
 
@@ -81,6 +82,8 @@ def personal_retrieval_config_fingerprint(
         if reranker_config is None:
             raise ValueError("reranked retrieval requires reranker configuration")
         fingerprint["reranker"] = reranker_config
+    if mode_config is not None:
+        fingerprint["mode_config"] = mode_config
     return resource_key(fingerprint)
 
 

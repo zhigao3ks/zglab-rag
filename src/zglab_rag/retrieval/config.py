@@ -61,3 +61,78 @@ class HybridRetrievalConfig:
         if top_k > self.max_top_k:
             raise ValueError(f"top_k must not exceed {self.max_top_k}")
         return top_k
+
+
+@dataclass(frozen=True, slots=True)
+class HierarchicalRetrievalConfig:
+    default_top_k: int = 5
+    max_top_k: int = 50
+    document_candidates: int = 8
+    section_candidates: int = 12
+    chunk_candidates: int = 30
+
+    def __post_init__(self) -> None:
+        if not 0 < self.default_top_k <= self.max_top_k:
+            raise ValueError("invalid hierarchical top-k bounds")
+        if min(self.document_candidates, self.section_candidates, self.chunk_candidates) <= 0:
+            raise ValueError("hierarchical candidate limits must be positive")
+
+    def validate_top_k(self, requested: int | None) -> int:
+        top_k = self.default_top_k if requested is None else requested
+        if not 0 < top_k <= self.max_top_k:
+            raise ValueError("top_k exceeds hierarchical bounds")
+        return top_k
+
+
+@dataclass(frozen=True, slots=True)
+class GraphRetrievalConfig:
+    default_top_k: int = 5
+    max_top_k: int = 50
+    max_start_nodes: int = 8
+    max_hops: int = 2
+    max_nodes: int = 24
+    max_edges: int = 64
+    max_candidate_documents: int = 12
+
+    def __post_init__(self) -> None:
+        values = (
+            self.max_start_nodes,
+            self.max_hops,
+            self.max_nodes,
+            self.max_edges,
+            self.max_candidate_documents,
+        )
+        if not 0 < self.default_top_k <= self.max_top_k or min(values) <= 0:
+            raise ValueError("invalid graph retrieval bounds")
+
+    def validate_top_k(self, requested: int | None) -> int:
+        top_k = self.default_top_k if requested is None else requested
+        if not 0 < top_k <= self.max_top_k:
+            raise ValueError("top_k exceeds graph bounds")
+        return top_k
+
+
+@dataclass(frozen=True, slots=True)
+class IntelligentRetrievalConfig:
+    default_top_k: int = 5
+    max_top_k: int = 50
+    hybrid_weight: float = 1.0
+    hierarchical_weight: float = 1.0
+    graph_weight: float = 1.0
+    rrf_k: int = 60
+
+    def __post_init__(self) -> None:
+        if not 0 < self.default_top_k <= self.max_top_k:
+            raise ValueError("invalid intelligent top-k bounds")
+        if min(self.hybrid_weight, self.hierarchical_weight, self.graph_weight) < 0:
+            raise ValueError("fusion weights must be non-negative")
+        if not any((self.hybrid_weight, self.hierarchical_weight, self.graph_weight)):
+            raise ValueError("at least one fusion weight is required")
+        if self.rrf_k <= 0:
+            raise ValueError("rrf_k must be positive")
+
+    def validate_top_k(self, requested: int | None) -> int:
+        top_k = self.default_top_k if requested is None else requested
+        if not 0 < top_k <= self.max_top_k:
+            raise ValueError("top_k exceeds intelligent bounds")
+        return top_k

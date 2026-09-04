@@ -1,0 +1,26 @@
+version: 1
+
+# Canonical entities only. Structural project/document/section nodes are
+# generated from the PUBLIC index; no factual relation is inferred from a
+# keyword mention.
+entities:
+  - id: technology:mcp
+    type: TECHNOLOGY
+    name: MCP
+    aliases:
+      - Model Context Protocol
+      - MCP
+  - id: technology:rag
+    type: TECHNOLOGY
+    name: RAG
+    aliases:
+      - Retrieval Augmented Generation
+      - RAG
+  - id: topic:agent
+    type: TOPIC
+    name: Agent
+    aliases:
+      - AI Agent
+      - Agent
+
+relations: []

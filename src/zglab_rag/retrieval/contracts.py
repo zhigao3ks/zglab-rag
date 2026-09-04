@@ -14,6 +14,8 @@ class RetrievalFilter(BaseModel):
     visibility: Visibility = Visibility.PUBLIC
     source_ids: tuple[str, ...] = ()
     scopes: tuple[Scope, ...] = ()
+    document_ids: tuple[str, ...] = ()
+    section_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def enforce_public_baseline(self) -> RetrievalFilter:
@@ -21,6 +23,8 @@ class RetrievalFilter(BaseModel):
             raise ValueError("Retrieval is public-only until authenticated mode exists")
         self.source_ids = tuple(sorted(set(self.source_ids)))
         self.scopes = tuple(sorted(set(self.scopes), key=str))
+        self.document_ids = tuple(sorted(set(self.document_ids)))
+        self.section_ids = tuple(sorted(set(self.section_ids)))
         return self
 
 
@@ -44,7 +48,9 @@ class RetrievalResult(BaseModel):
     rank: int = Field(gt=0)
     score: float
     distance: float | None = None
-    retriever: Literal["vector", "lexical", "hybrid", "reranked"] = "vector"
+    retriever: Literal[
+        "vector", "lexical", "hybrid", "reranked", "hierarchical", "graph", "intelligent"
+    ] = "vector"
     raw_bm25: float | None = None
     vector_rank: int | None = None
     lexical_rank: int | None = None
@@ -53,6 +59,10 @@ class RetrievalResult(BaseModel):
     rerank_rank: int | None = None
     vector_score: float | None = None
     reranker_score: float | None = None
+    hierarchical_rank: int | None = None
+    graph_rank: int | None = None
+    hybrid_rank: int | None = None
+    fusion_score: float | None = None
 
 
 class RetrievalDiagnostics(BaseModel):

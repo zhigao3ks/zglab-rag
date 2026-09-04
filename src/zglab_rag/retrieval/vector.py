@@ -120,6 +120,8 @@ class VectorRetriever:
                 visibility=query.filters.visibility.value,
                 source_ids=query.filters.source_ids,
                 scopes=[scope.value for scope in query.filters.scopes],
+                document_ids=query.filters.document_ids,
+                section_ids=query.filters.section_ids,
             )
             allowed = [
                 (float(candidate["distance"]), hydrated[int(candidate["rowid"])])

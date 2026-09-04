@@ -250,6 +250,12 @@ class IndexRepository:
                 """,
                 (profile.profile_id,),
             )
+            # Derived hierarchy and graph are rebuilt inside the same core
+            # transaction. A failure therefore cannot publish a completed run
+            # with stale or partial retrieval structures.
+            from zglab_rag.knowledge_structure.builder import rebuild_knowledge_structure
+
+            rebuild_knowledge_structure(self.connection, run_id=run_id)
             self.connection.execute(
                 """
                 UPDATE index_runs
@@ -471,6 +477,8 @@ class IndexRepository:
         visibility: str,
         source_ids: Sequence[str] = (),
         scopes: Sequence[str] = (),
+        document_ids: Sequence[str] = (),
+        section_ids: Sequence[str] = (),
     ) -> dict[int, sqlite3.Row]:
         """Hydrate only allowed rows so filtered metadata never leaves SQLite."""
         if not row_ids:
@@ -486,6 +494,16 @@ class IndexRepository:
                 f"({','.join('?' for _ in scopes)})"
             )
             parameters.extend(scopes)
+        if document_ids:
+            clauses.append(f"c.document_id IN ({','.join('?' for _ in document_ids)})")
+            parameters.extend(document_ids)
+        if section_ids:
+            clauses.append(
+                "EXISTS(SELECT 1 FROM sections s WHERE s.document_id=c.document_id "
+                "AND s.section_path_json=c.section_path_json "
+                f"AND s.section_id IN ({','.join('?' for _ in section_ids)}))"
+            )
+            parameters.extend(section_ids)
         row_placeholders = ",".join("?" for _ in row_ids)
         clauses.append(f"c.id IN ({row_placeholders})")
         parameters.extend(row_ids)
@@ -511,6 +529,8 @@ class IndexRepository:
         content_weight: float,
         source_ids: Sequence[str] = (),
         scopes: Sequence[str] = (),
+        document_ids: Sequence[str] = (),
+        section_ids: Sequence[str] = (),
     ) -> list[sqlite3.Row]:
         clauses = ["fts_chunks MATCH ?", "c.visibility = ?"]
         filter_parameters: list[object] = [match_expression, visibility]
@@ -523,6 +543,16 @@ class IndexRepository:
                 f"({','.join('?' for _ in scopes)})"
             )
             filter_parameters.extend(scopes)
+        if document_ids:
+            clauses.append(f"c.document_id IN ({','.join('?' for _ in document_ids)})")
+            filter_parameters.extend(document_ids)
+        if section_ids:
+            clauses.append(
+                "EXISTS(SELECT 1 FROM sections s WHERE s.document_id=c.document_id "
+                "AND s.section_path_json=c.section_path_json "
+                f"AND s.section_id IN ({','.join('?' for _ in section_ids)}))"
+            )
+            filter_parameters.extend(section_ids)
         parameters: list[object] = [title_weight, section_weight, content_weight]
         parameters.extend(filter_parameters)
         parameters.append(top_k)
@@ -539,3 +569,75 @@ class IndexRepository:
             """,
             tuple(parameters),
         ).fetchall()
+
+    def search_document_profiles(
+        self,
+        match_expression: str,
+        *,
+        top_k: int,
+        source_ids: Sequence[str] = (),
+        document_ids: Sequence[str] = (),
+    ) -> list[sqlite3.Row]:
+        clauses = ["fts_documents MATCH ?"]
+        parameters: list[object] = [match_expression]
+        if source_ids:
+            clauses.append(f"d.source_id IN ({','.join('?' for _ in source_ids)})")
+            parameters.extend(source_ids)
+        if document_ids:
+            clauses.append(f"d.document_id IN ({','.join('?' for _ in document_ids)})")
+            parameters.extend(document_ids)
+        parameters.append(top_k)
+        return self.connection.execute(
+            f"""
+            SELECT d.*, dp.project_key,
+                   bm25(fts_documents, 0.0, 3.0, 3.0, 1.0, 1.5, 2.0, 2.5) AS raw_bm25
+            FROM fts_documents
+            JOIN documents d ON d.document_id=fts_documents.document_id
+            JOIN document_profiles dp ON dp.document_id=d.document_id
+            WHERE d.visibility='public' AND {' AND '.join(clauses)}
+            ORDER BY raw_bm25,d.document_id LIMIT ?
+            """,
+            parameters,
+        ).fetchall()
+
+    def search_sections(
+        self,
+        match_expression: str,
+        *,
+        document_ids: Sequence[str],
+        top_k: int,
+    ) -> list[sqlite3.Row]:
+        if not document_ids:
+            return []
+        placeholders = ",".join("?" for _ in document_ids)
+        return self.connection.execute(
+            f"""
+            SELECT s.*,bm25(fts_sections,0.0,0.0,3.0,2.0,1.0) AS raw_bm25
+            FROM fts_sections JOIN sections s ON s.section_id=fts_sections.section_id
+            JOIN documents d ON d.document_id=s.document_id
+            WHERE fts_sections MATCH ? AND s.document_id IN ({placeholders})
+              AND d.visibility='public'
+            ORDER BY raw_bm25,s.section_id LIMIT ?
+            """,
+            (match_expression, *document_ids, top_k),
+        ).fetchall()
+
+    def public_chunks_by_ids(
+        self, chunk_ids: Sequence[str], *, filters
+    ) -> dict[str, sqlite3.Row]:
+        if not chunk_ids:
+            return {}
+        rows = self.connection.execute(
+            f"SELECT id,chunk_id FROM chunks WHERE chunk_id IN "
+            f"({','.join('?' for _ in chunk_ids)})",
+            tuple(chunk_ids),
+        ).fetchall()
+        by_row = self.hydrate_filtered_candidates(
+            [row["id"] for row in rows],
+            visibility=filters.visibility.value,
+            source_ids=filters.source_ids,
+            scopes=[scope.value for scope in filters.scopes],
+            document_ids=filters.document_ids,
+            section_ids=filters.section_ids,
+        )
+        return {row["chunk_id"]: row for row in by_row.values()}

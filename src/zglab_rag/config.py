@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,6 +46,21 @@ class Settings(BaseSettings):
     hybrid_lexical_weight: float = 1.0
     reranker_candidate_k: int = 20
     reranker_default_top_k: int = 5
+    generation_retrieval_mode: Literal[
+        "vector", "hybrid", "reranked", "hierarchical", "graph", "intelligent"
+    ] = "vector"
+    hierarchical_document_candidates: int = Field(default=8, ge=1, le=32)
+    hierarchical_section_candidates: int = Field(default=12, ge=1, le=48)
+    hierarchical_chunk_candidates: int = Field(default=30, ge=1, le=100)
+    graph_max_start_nodes: int = Field(default=8, ge=1, le=16)
+    graph_max_hops: int = Field(default=2, ge=1, le=4)
+    graph_max_nodes: int = Field(default=24, ge=1, le=64)
+    graph_max_edges: int = Field(default=64, ge=1, le=256)
+    graph_max_candidate_documents: int = Field(default=12, ge=1, le=32)
+    intelligent_hybrid_weight: float = Field(default=1.0, ge=0, le=10)
+    intelligent_hierarchical_weight: float = Field(default=1.0, ge=0, le=10)
+    intelligent_graph_weight: float = Field(default=1.0, ge=0, le=10)
+    intelligent_rrf_k: int = Field(default=60, ge=1, le=1000)
 
     llm_base_url: str | None = Field(
         default=None, validation_alias=AliasChoices("ZGLAB_RAG_LLM_BASE_URL", "LLM_BASE_URL")
