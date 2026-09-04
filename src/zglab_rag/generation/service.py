@@ -238,11 +238,13 @@ class GroundedAnswerService:
         *,
         context_builder: ContextBuilder | None = None,
         config: GroundedGenerationConfig | None = None,
+        personal_retrieval_fingerprint: str | None = None,
     ) -> None:
         self.retriever = retriever
         self.provider = provider
         self.config = config or GroundedGenerationConfig()
         self.context_builder = context_builder or ContextBuilder(self.config.budget)
+        self.personal_retrieval_fingerprint = personal_retrieval_fingerprint
 
     def answer(
         self,
@@ -277,12 +279,12 @@ class GroundedAnswerService:
             cache_fingerprint = None
             cached_results: list[RetrievalResult] | None = None
             if session_workspace is not None and knowledge_snapshot_fingerprint is not None:
-                cache_fingerprint = resource_key(
-                    {
-                        "mode": mode,
-                        "top_k": retrieval_top_k,
-                        "config": self.config.model_dump(mode="json"),
-                    }
+                # Runtime construction supplies the actual retriever
+                # fingerprint.  The fallback remains stable for lightweight
+                # non-runtime callers that do not opt into configuration-aware
+                # reuse.
+                cache_fingerprint = self.personal_retrieval_fingerprint or resource_key(
+                    {"mode": mode, "retrieval": "unspecified"}
                 )
                 cache_key = personal_resource_key(
                     query=retrieval_query,

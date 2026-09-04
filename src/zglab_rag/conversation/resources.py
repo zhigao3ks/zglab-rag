@@ -53,6 +53,37 @@ def personal_resource_key(*, query: str, mode: str, top_k: int, snapshot: str, c
     )
 
 
+def personal_retrieval_config_fingerprint(
+    *,
+    vector_config: Any,
+    mode: str,
+    reranker_config: dict[str, Any] | None = None,
+) -> str:
+    """Fingerprint the retrieval behavior that produced a personal result.
+
+    Generation settings are intentionally excluded: this value describes the
+    actual retriever configuration, while the knowledge snapshot carries the
+    embedding profile identity.  A reranked path must identify both its
+    candidate behavior and the enabled reranker model.
+    """
+    fingerprint: dict[str, Any] = {
+        "v": PERSONAL_RESOURCE_VERSION,
+        "mode": mode,
+        "vector": {
+            "default_top_k": vector_config.default_top_k,
+            "max_top_k": vector_config.max_top_k,
+            "candidate_factor": vector_config.candidate_factor,
+            "minimum_candidate_k": vector_config.minimum_candidate_k,
+            "maximum_candidate_k": vector_config.maximum_candidate_k,
+        },
+    }
+    if mode == "reranked":
+        if reranker_config is None:
+            raise ValueError("reranked retrieval requires reranker configuration")
+        fingerprint["reranker"] = reranker_config
+    return resource_key(fingerprint)
+
+
 def web_resource_key(*, query: str, provider: str, config: str) -> str:
     return resource_key(
         {

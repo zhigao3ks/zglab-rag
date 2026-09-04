@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Protocol
 
 from zglab_rag.config import Settings, get_settings
+from zglab_rag.conversation.resources import personal_retrieval_config_fingerprint
 from zglab_rag.embeddings.sentence_transformer import SentenceTransformerEmbeddingProvider
 from zglab_rag.generation.context import ContextBudget
 from zglab_rag.generation.contracts import GenerationProvider
@@ -155,12 +156,25 @@ def build_generation_service(
 
     This is the primary entry point for both CLI and HTTP API.
     """
+    vector_config = retrieval_config(settings)
     retriever = build_generation_retriever(
         mode,
         connection=connection,
         settings=settings,
         embedding_components=embedding_components,
     )
+    reranker_config = None
+    if mode == "reranked":
+        candidate_k = settings.reranker_candidate_k
+        reranker_model_config = RerankerModelRegistry.from_yaml(
+            Path("config/reranker-models.yaml")
+        ).get_enabled("mmarco-mMiniLMv2-L12-H384-v1")
+        reranker_config = {
+            "candidate_k": candidate_k,
+            "default_top_k": min(settings.generation_retrieval_top_k, candidate_k),
+            "maximum_top_k": candidate_k,
+            "model": reranker_model_config.id,
+        }
     return GroundedAnswerService(
         retriever,
         llm_provider,
@@ -173,6 +187,11 @@ def build_generation_service(
             ),
             retrieval_query_max_chars=settings.conversation_context_retrieval_query_max_chars,
             retrieval_query_max_bytes=settings.conversation_context_retrieval_query_max_bytes,
+        ),
+        personal_retrieval_fingerprint=personal_retrieval_config_fingerprint(
+            vector_config=vector_config,
+            mode=mode,
+            reranker_config=reranker_config,
         ),
     )
 

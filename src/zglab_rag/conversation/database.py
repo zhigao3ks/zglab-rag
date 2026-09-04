@@ -8,22 +8,29 @@ from pathlib import Path
 
 CONVERSATION_SCHEMA_VERSION = 3
 
-CONVERSATION_SCHEMA = """
+_SCHEMA_METADATA = """
 CREATE TABLE schema_metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
-);
+)
+"""
 
+_CONVERSATIONS = """
 CREATE TABLE conversations (
     id INTEGER PRIMARY KEY,
     owner_user_id INTEGER NOT NULL,
     title TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-);
-CREATE INDEX conversations_owner_updated_idx
-    ON conversations(owner_user_id, updated_at DESC, id DESC);
+)
+"""
 
+_CONVERSATIONS_OWNER_UPDATED_INDEX = """
+CREATE INDEX conversations_owner_updated_idx
+    ON conversations(owner_user_id, updated_at DESC, id DESC)
+"""
+
+_MESSAGES = """
 CREATE TABLE messages (
     id INTEGER PRIMARY KEY,
     conversation_id INTEGER NOT NULL,
@@ -31,10 +38,15 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-);
-CREATE INDEX messages_conversation_created_idx
-    ON messages(conversation_id, created_at ASC, id ASC);
+)
+"""
 
+_MESSAGES_CONVERSATION_CREATED_INDEX = """
+CREATE INDEX messages_conversation_created_idx
+    ON messages(conversation_id, created_at ASC, id ASC)
+"""
+
+_CONVERSATION_SUMMARIES = """
 CREATE TABLE conversation_summaries (
     conversation_id INTEGER PRIMARY KEY,
     content TEXT NOT NULL,
@@ -44,8 +56,10 @@ CREATE TABLE conversation_summaries (
     FOREIGN KEY(conversation_id)
         REFERENCES conversations(id)
         ON DELETE CASCADE
-);
+)
+"""
 
+_SESSION_RESOURCES = """
 CREATE TABLE session_resources (
     id INTEGER PRIMARY KEY,
     conversation_id INTEGER NOT NULL,
@@ -63,13 +77,44 @@ CREATE TABLE session_resources (
     last_used_at TEXT NOT NULL,
     FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
     UNIQUE(conversation_id, resource_type, resource_key)
-);
-CREATE INDEX session_resources_conversation_type_idx
-    ON session_resources(conversation_id, resource_type);
-CREATE INDEX session_resources_expires_at_idx ON session_resources(expires_at);
-CREATE INDEX session_resources_conversation_last_used_idx
-    ON session_resources(conversation_id, last_used_at, created_at, id);
+)
 """
+
+_SESSION_RESOURCES_CONVERSATION_TYPE_INDEX = """
+CREATE INDEX session_resources_conversation_type_idx
+    ON session_resources(conversation_id, resource_type)
+"""
+
+_SESSION_RESOURCES_EXPIRES_AT_INDEX = """
+CREATE INDEX session_resources_expires_at_idx ON session_resources(expires_at)
+"""
+
+_SESSION_RESOURCES_CONVERSATION_LAST_USED_INDEX = """
+CREATE INDEX session_resources_conversation_last_used_idx
+    ON session_resources(conversation_id, last_used_at, created_at, id)
+"""
+
+# SQLite's executescript() commits any pending transaction before running its
+# script. Keep the statements individually executable so initialization and
+# migrations have one real transaction boundary.
+CONVERSATION_SCHEMA_STATEMENTS = (
+    _SCHEMA_METADATA,
+    _CONVERSATIONS,
+    _CONVERSATIONS_OWNER_UPDATED_INDEX,
+    _MESSAGES,
+    _MESSAGES_CONVERSATION_CREATED_INDEX,
+    _CONVERSATION_SUMMARIES,
+    _SESSION_RESOURCES,
+    _SESSION_RESOURCES_CONVERSATION_TYPE_INDEX,
+    _SESSION_RESOURCES_EXPIRES_AT_INDEX,
+    _SESSION_RESOURCES_CONVERSATION_LAST_USED_INDEX,
+)
+SESSION_RESOURCE_SCHEMA_STATEMENTS = (
+    _SESSION_RESOURCES,
+    _SESSION_RESOURCES_CONVERSATION_TYPE_INDEX,
+    _SESSION_RESOURCES_EXPIRES_AT_INDEX,
+    _SESSION_RESOURCES_CONVERSATION_LAST_USED_INDEX,
+)
 
 
 class ConversationDatabaseError(RuntimeError):
@@ -123,7 +168,8 @@ class ConversationDatabase:
                 )
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                connection.executescript(CONVERSATION_SCHEMA)
+                for statement in CONVERSATION_SCHEMA_STATEMENTS:
+                    connection.execute(statement)
                 connection.execute(
                     "INSERT INTO schema_metadata(key, value) VALUES ('schema_version', ?)",
                     (str(CONVERSATION_SCHEMA_VERSION),),
@@ -197,31 +243,8 @@ class ConversationDatabase:
         """Atomically add the bounded, owner-scoped session workspace store."""
         try:
             connection.execute("BEGIN IMMEDIATE")
-            connection.executescript("""
-                CREATE TABLE session_resources (
-                    id INTEGER PRIMARY KEY,
-                    conversation_id INTEGER NOT NULL,
-                    resource_type TEXT NOT NULL CHECK(resource_type IN (
-                        'PERSONAL_RETRIEVAL', 'WEB_EVIDENCE', 'TOOL_RESULT'
-                    )),
-                    resource_key TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    provenance_json TEXT NOT NULL,
-                    producer_fingerprint TEXT NOT NULL,
-                    source_request_id TEXT NOT NULL,
-                    size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    last_used_at TEXT NOT NULL,
-                    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
-                    UNIQUE(conversation_id, resource_type, resource_key)
-                );
-                CREATE INDEX session_resources_conversation_type_idx
-                    ON session_resources(conversation_id, resource_type);
-                CREATE INDEX session_resources_expires_at_idx ON session_resources(expires_at);
-                CREATE INDEX session_resources_conversation_last_used_idx
-                    ON session_resources(conversation_id, last_used_at, created_at, id);
-            """)
+            for statement in SESSION_RESOURCE_SCHEMA_STATEMENTS:
+                connection.execute(statement)
             connection.execute(
                 "UPDATE schema_metadata SET value=? WHERE key='schema_version'", ("3",)
             )

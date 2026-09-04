@@ -421,7 +421,8 @@ class SessionResourceRepository:
                 self.connection.rollback()
                 raise ValueError("conversation is not owned")
             self.connection.execute(
-                "DELETE FROM session_resources WHERE expires_at<=?", (timestamp,)
+                "DELETE FROM session_resources WHERE conversation_id=? AND expires_at<=?",
+                (conversation_id, timestamp),
             )
             self.connection.execute(
                 "INSERT INTO session_resources("
